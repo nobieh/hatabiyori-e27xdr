@@ -204,7 +204,7 @@ label.f{display:block;font-size:14px;color:var(--muted);margin:12px 0 4px;}
 <script id="hb-core">
 "use strict";
 var HB = {};
-HB.VERSION = "2.5.0";
+HB.VERSION = "2.6.0";
 HB.KEY = "hatabiyori:v2";
 /* 天気の観測地点。引っ越したらここを変えるだけ。 */
 HB.LOC = { name: "因島", lat: 34.30, lon: 133.19 };
@@ -859,6 +859,8 @@ HB.stripForSync = function(state){
     }),
     done: state.done,
     harvests: state.harvests,
+    tasks: state.tasks || [],
+    calImported: state.calImported || {},
     settings: { sound: state.settings.sound, lastBackup: state.settings.lastBackup },
     meta: state.meta
   };
@@ -1002,16 +1004,18 @@ if(typeof module !== "undefined" && module.exports){ module.exports = HB; }
 
 <script id="hb-cal">
 "use strict";
-/* ---------- カレンダー連携モジュール ----------
-   受付係v1.3の action:"calendar" が返す農業予定を、既存の予定エンジンに合流させる。
-   既存コードは書き換えず「包む」方式: HB.migrate と HB.tasksForDate をラップ。
-   予定の編集はGoogleカレンダー側で行う(次にアプリを開いた時に反映)。 */
+/* ---------- カレンダー連携+じぶんの予定(独立)モジュール ----------
+   ・受付係v1.3の農業予定を予定エンジンに合流(📆)。写し取り込み後は元をかくす。
+   ・作物にひもづかない「じぶんの予定」state.tasks を新設(編集・削除可)。
+   ・既存コードは無改変: HB.migrate と HB.tasksForDate をラップ。 */
 (function(){
   var _migrate = HB.migrate;
   HB.migrate = function(s){
     s = _migrate(s);
     if(!s) return s;
     s.calCache = s.calCache || { at: null, events: [] };
+    s.tasks = s.tasks || [];
+    s.calImported = s.calImported || {};
     if(s.settings && s.settings.sync && s.settings.sync.calendar === undefined){
       s.settings.sync.calendar = true;
     }
@@ -1020,14 +1024,21 @@ if(typeof module !== "undefined" && module.exports){ module.exports = HB; }
   var _tasksForDate = HB.tasksForDate;
   HB.tasksForDate = function(state, dateStr){
     var list = _tasksForDate(state, dateStr);
+    (state.tasks || []).forEach(function(tk){
+      if(tk.date !== dateStr || !tk.label) return;
+      list.push({ cropId: "task:" + tk.id, cropName: "\ud83d\udcdd じぶんの予定",
+                  label: tk.label, kind: "custom", taskId: tk.id, date: tk.date, memo: tk.memo || "",
+                  key: "task:" + tk.id + "|" + dateStr + "|task" });
+    });
     var cc = state.calCache;
     var on = !(state.settings && state.settings.sync && state.settings.sync.calendar === false);
     if(on && cc && cc.events){
       cc.events.forEach(function(ev){
         if(ev.date !== dateStr) return;
+        if(state.calImported && state.calImported[ev.id]) return;
         var label = (ev.time ? ev.time + " " : "") + ev.title;
-        list.push({ cropId: "cal:" + ev.id, cropName: "\ud83d\udcc6 カレンダーの予定",
-                    label: label, kind: "cal",
+        list.push({ cropId: "cal:" + ev.id, cropName: "カレンダーの予定",
+                    label: label, kind: "cal", evId: ev.id, date: ev.date, memo: ev.memo || "",
                     key: "cal:" + ev.id + "|" + dateStr + "|" + label });
       });
     }
@@ -1100,18 +1111,21 @@ function WeatherCard({ weather, error }){
 }
 
 function TaskRow({ t, done, onToggle }){
+  const openable = String(t.cropId || "").indexOf("cal:") === 0 || String(t.cropId || "").indexOf("task:") === 0;
+  const open = () => { if(openable && window.__hbOpenTask) window.__hbOpenTask(t); };
   return (
     <div className={"task" + (done ? " done" : "")}>
       <button className="chk" onClick={() => onToggle(t)} aria-label={done ? "もどす" : "できた"}>
         {done ? "✓" : ""}
       </button>
-      <div className="body">
-        <div className="crop">{t.dateLabel ? t.dateLabel + "・" : ""}{t.cropName}</div>
+      <div className="body" onClick={open} style={openable ? {cursor:"pointer"} : null}>
+        <div className="crop">{t.dateLabel ? t.dateLabel + "・" : ""}{t.cropName}{openable ? " ▸" : ""}</div>
         <div className="label">{t.label}</div>
       </div>
       {t.kind === "harvest" && <span className="tag harvest">収穫</span>}
       {t.kind === "water" && <span className="tag">水</span>}
       {t.kind === "custom" && <span className="tag">じぶん</span>}
+      {t.kind === "cal" && <span className="tag">\ud83d\udcc6</span>}
     </div>
   );
 }
@@ -1212,6 +1226,8 @@ function CalendarView({ state, todayStr, api }){
         {selTasks.map(t => (
           <TaskRow key={t.key} t={t} done={!!state.done[t.key]} onToggle={api.toggleTask} />
         ))}
+              <div style={{height:8}}></div>
+        <button className="btn ghost small" onClick={() => api.addTaskFor(sel)}>＋ この日に予定を追加</button>
       </section>
     </div>
   );
@@ -1672,6 +1688,55 @@ function SettingsView({ state, api, syncing }){
   );
 }
 
+/* ---------- 📆カレンダー予定の詳細 ---------- */
+function CalTaskSheet({ task, api, onClose }){
+  return (
+    <Sheet title={"\ud83d\udcc6 カレンダーの予定"} onClose={onClose}>
+      <div className="kv"><span>日づけ</span><b>{HB.jpDate(task.date)}</b></div>
+      <div className="kv"><span>ないよう</span><b>{task.label}</b></div>
+      {task.memo && <p className="note">メモ: {task.memo}</p>}
+      <p className="note">この予定の直し方は2つ: Googleカレンダーで直す(次にアプリを開いた時に反映)か、下のボタンでアプリに写してから自由に直すか、です。</p>
+      <div style={{height:8}}></div>
+      <button className="btn" onClick={() => api.importCalTask(task)}>✏️ アプリに写して編集する</button>
+      <div style={{height:8}}></div>
+      <button className="btn gray" onClick={onClose}>とじる</button>
+    </Sheet>
+  );
+}
+
+/* ---------- じぶんの予定の編集 ---------- */
+function TaskEditSheet({ state, taskId, isNew, api, onClose }){
+  const tk = (state.tasks || []).find(x => x.id === taskId);
+  const [date, setDate] = useState(tk ? tk.date : "");
+  const [label, setLabel] = useState(tk ? tk.label : "");
+  const [memo, setMemo] = useState(tk ? (tk.memo || "") : "");
+  if(!tk) return null;
+  const close = () => {
+    if(isNew && !label.trim()) api.removeTaskQuiet(taskId);
+    onClose();
+  };
+  return (
+    <Sheet title={"\ud83d\udcdd じぶんの予定"} onClose={close}>
+      <label className="f">日づけ</label>
+      <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+      <label className="f">ないよう</label>
+      <input type="text" value={label} placeholder="例: JAに肥料を注文" onChange={e => setLabel(e.target.value)} />
+      <label className="f">メモ（なくてもOK）</label>
+      <textarea value={memo} onChange={e => setMemo(e.target.value)} />
+      <div style={{height:12}}></div>
+      <button className="btn" onClick={() => {
+        if(!date || !label.trim()) return;
+        api.saveTask(taskId, { date: date, label: label.trim(), memo: memo });
+        onClose(); api.say("予定を保存しました \ud83d\udcdd");
+      }}>保存する</button>
+      <div style={{height:8}}></div>
+      <button className="btn danger" onClick={() => {
+        if(window.confirm("この予定を消しますか？")) api.removeTask(taskId);
+      }}>この予定を消す</button>
+    </Sheet>
+  );
+}
+
 /* ---------- AIにそうだん ---------- */
 function DigestModal({ text, autoText, onCopy, onShare, onClose }){
   return (
@@ -1976,7 +2041,38 @@ function App(){
   const syncTrouble = sy.url && sy.auto && sy.lastError &&
     (!sy.lastSync || (Date.now() - new Date(sy.lastSync).getTime()) / 86400000 >= 3);
 
-  const api = {
+    /* じぶんの予定(独立)とカレンダー写し取り込み */
+  const openTask = t => {
+    if(String(t.cropId).indexOf("cal:") === 0) setModal({ t: "caltask", task: t });
+    else if(String(t.cropId).indexOf("task:") === 0) setModal({ t: "edittask", id: t.taskId });
+  };
+  useEffect(() => {
+    window.__hbOpenTask = openTask;
+    return () => { if(window.__hbOpenTask === openTask) window.__hbOpenTask = null; };
+  });
+  const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const importCalTask = ct => {
+    const id = newId();
+    update(s => {
+      s.tasks = (s.tasks || []).concat([{ id: id, date: ct.date, label: ct.label, memo: ct.memo || "", srcEventId: ct.evId }]);
+      s.calImported = Object.assign({}, s.calImported || {});
+      s.calImported[ct.evId] = true;
+    });
+    setModal({ t: "edittask", id: id });
+    say("アプリに写しました。ここで自由に直せます ✏️");
+  };
+  const addTaskFor = date => {
+    const id = newId();
+    update(s => { s.tasks = (s.tasks || []).concat([{ id: id, date: date, label: "", memo: "", srcEventId: null }]); });
+    setModal({ t: "edittask", id: id, isNew: true });
+  };
+  const saveTask = (id, patch) => update(s => {
+    s.tasks = (s.tasks || []).map(x => x.id === id ? Object.assign({}, x, patch) : x);
+  });
+  const removeTaskQuiet = id => update(s => { s.tasks = (s.tasks || []).filter(x => x.id !== id); });
+  const removeTask = id => { removeTaskQuiet(id); setModal(null); say("予定を消しました"); };
+
+const api = {
     toggleTask, removeHarvest, say,
     openHarvest: id => setModal({ t: "harvest", id: id }),
     openCrop: id => setModal({ t: "crop", id: id }),
@@ -1986,7 +2082,8 @@ function App(){
     setCropCount, setCropMaturity, addNote, removeNote,
     addCustom, removeCustom, closeCrop, reopenCrop,
     shareBackup, downloadBackup, importFile, toggleSound,
-    syncNow, pullNow, setSyncField
+    syncNow, pullNow, setSyncField,
+    openTask, importCalTask, addTaskFor, saveTask, removeTask, removeTaskQuiet
   };
 
   return (
@@ -2025,6 +2122,10 @@ function App(){
         <HarvestModal state={state} cropId={modal.id} todayStr={todayStr} onSave={addHarvest} onClose={() => setModal(null)} />}
       {modal && modal.t === "digest" &&
         <DigestModal text={digestText()} autoText={HB.buildAutomationText(state, todayStr, 90)} onCopy={copyDigest} onShare={shareDigest} onClose={() => setModal(null)} />}
+      {modal && modal.t === "caltask" &&
+        <CalTaskSheet task={modal.task} api={api} onClose={() => setModal(null)} />}
+      {modal && modal.t === "edittask" &&
+        <TaskEditSheet state={state} taskId={modal.id} isNew={!!modal.isNew} api={api} onClose={() => setModal(null)} />}
       <Toast msg={toast} />
     </div>
   );
