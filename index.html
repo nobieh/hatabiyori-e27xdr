@@ -199,7 +199,7 @@ label.f{display:block;font-size:14px;color:var(--muted);margin:12px 0 4px;}
 <script id="hb-core">
 "use strict";
 var HB = {};
-HB.VERSION = "2.0.0";
+HB.VERSION = "2.1.0";
 HB.KEY = "hatabiyori:v2";
 /* 天気の観測地点。引っ越したらここを変えるだけ。 */
 HB.LOC = { name: "因島", lat: 34.30, lon: 133.19 };
@@ -297,45 +297,376 @@ HB.sound = {
 <script id="hb-core2">
 "use strict";
 /* ---------- 作物データベース ----------
-   ※いまは「標準的な目安」の値。本家・畑日和v1のデータが届き次第そっくり差し替える。
-   d: 植え付け/種まきからの日数, annual: 毎年の月日(バラ用), harvest: 収穫期間の目安 */
+   本家・畑日和v1(hatake-note.jsx)の34種を忠実に移植し、新版で追加した5種を残した全39種。
+   d: 植え付け/種まきからの日数, annual: 毎年の月日(バラの育成株用), harvest: 収穫期間の目安。
+   harvest.label があれば収穫開始日をその文言で知らせる(v1の言い回しを保持)。 */
 HB.DB = {
-  tomato:    { name:"トマト",       cat:"実もの", emoji:"🍅", basis:"植え付け", water:2, unit:"個", harvest:{from:55,to:120}, events:[{d:21,label:"追肥(1回目)"},{d:42,label:"追肥(2回目)"},{d:63,label:"追肥(3回目)"}], tip:"わき芽かきをこまめに。支柱はしっかり。" },
-  minitomato:{ name:"ミニトマト",   cat:"実もの", emoji:"🍅", basis:"植え付け", water:2, unit:"個", harvest:{from:45,to:130}, events:[{d:21,label:"追肥(1回目)"},{d:42,label:"追肥(2回目)"},{d:63,label:"追肥(3回目)"}], tip:"雨のあとの実割れに注意。" },
-  nasu:      { name:"ナス",         cat:"実もの", emoji:"🍆", basis:"植え付け", water:1, unit:"本", harvest:{from:55,to:150}, events:[{d:21,label:"追肥(1回目)"},{d:42,label:"追肥(2回目)"},{d:63,label:"追肥(3回目)"},{d:84,label:"追肥(4回目)"}], tip:"水と肥料をよく食べる子。7月末の更新剪定で秋ナスも。" },
-  piman:     { name:"ピーマン",     cat:"実もの", emoji:"🫑", basis:"植え付け", water:2, unit:"個", harvest:{from:50,to:150}, events:[{d:21,label:"追肥(1回目)"},{d:42,label:"追肥(2回目)"},{d:63,label:"追肥(3回目)"},{d:84,label:"追肥(4回目)"}], tip:"一番果は小さいうちに採ると株が育つ。" },
-  kyuri:     { name:"キュウリ",     cat:"実もの", emoji:"🥒", basis:"植え付け", water:1, unit:"本", harvest:{from:40,to:90},  events:[{d:14,label:"追肥(1回目)"},{d:28,label:"追肥(2回目)"},{d:42,label:"追肥(3回目)"}], tip:"水切れ注意。実は早め早めに収穫。" },
+  /* ───── 実もの(v1: 果菜) ───── */
+  tomato: { name:"トマト", cat:"実もの", emoji:"🍅", basis:"植え付け", water:2, unit:"個",
+    harvest:{ from:80, to:120, label:"収穫開始の目安" },
+    events:[
+      { d:7,  label:"支柱立て・誘引の確認" },
+      { d:20, label:"防除①(疫病・アブラムシ予防)" },
+      { d:30, label:"追肥①(第1果房がふくらむ頃)" },
+      { d:40, label:"防除②" },
+      { d:45, label:"追肥②(以後2週間おき)" },
+      { d:60, label:"追肥③" },
+      { d:60, label:"防除③" }
+    ],
+    tip:"わき芽かきをこまめに。支柱はしっかり。" },
+  minitomato: { name:"ミニトマト", cat:"実もの", emoji:"🍅", basis:"植え付け", water:2, unit:"個",
+    harvest:{ from:60, to:130, label:"収穫開始の目安" },
+    events:[
+      { d:7,  label:"支柱立て・誘引・わき芽かき開始" },
+      { d:20, label:"防除①(アブラムシ・疫病予防)" },
+      { d:25, label:"追肥①(第1果房がふくらむ頃)" },
+      { d:40, label:"追肥②(以後2週間おき)" },
+      { d:45, label:"防除②" }
+    ],
+    tip:"雨のあとの実割れに注意。" },
+  cucumber: { name:"キュウリ", cat:"実もの", emoji:"🥒", basis:"植え付け", water:1, unit:"本",
+    harvest:{ from:55, to:100, label:"収穫開始の目安" },
+    events:[
+      { d:7,  label:"ネット張り・誘引" },
+      { d:15, label:"防除①(うどんこ病・べと病予防)" },
+      { d:25, label:"追肥①(つるが伸び始めたら)" },
+      { d:35, label:"防除②" },
+      { d:40, label:"追肥②(以後2週間おき)" }
+    ],
+    tip:"水切れ注意。実は早め早めに収穫。" },
+  eggplant: { name:"ナス", cat:"実もの", emoji:"🍆", basis:"植え付け", water:1, unit:"本",
+    harvest:{ from:75, to:150, label:"収穫開始の目安" },
+    events:[
+      { d:10, label:"支柱立て・3本仕立てに整枝" },
+      { d:20, label:"防除①(アブラムシ・テントウムシダマシ)" },
+      { d:30, label:"追肥①(一番果が付いた頃)" },
+      { d:45, label:"追肥②(以後2〜3週間おき)" },
+      { d:50, label:"防除②" }
+    ],
+    tip:"水と肥料をよく食べる子。7月末の更新剪定で秋ナスも。" },
+  pepper: { name:"ピーマン", cat:"実もの", emoji:"🫑", basis:"植え付け", water:2, unit:"個",
+    harvest:{ from:60, to:150, label:"収穫開始の目安" },
+    events:[
+      { d:10, label:"支柱立て・一番花より下のわき芽かき" },
+      { d:20, label:"防除①(アブラムシ)" },
+      { d:25, label:"追肥①(一番果が付いた頃)" },
+      { d:40, label:"追肥②(以後2週間おき)" },
+      { d:50, label:"防除②" }
+    ],
+    tip:"一番果は小さいうちに採ると株が育つ。" },
+  okra: { name:"オクラ", cat:"実もの", emoji:"🌿", basis:"植え付け", water:2, unit:"本",
+    harvest:{ from:55, to:120, label:"収穫開始(開花後4〜5日・採り遅れ注意)" },
+    events:[
+      { d:14, label:"間引き(1〜2本立ちに)" },
+      { d:25, label:"追肥①(本葉5〜6枚・以後2週間おき)" },
+      { d:30, label:"防除(アブラムシ・ハマキムシ)" },
+      { d:45, label:"追肥②" }
+    ],
+    tip:"採り遅れると固くなるので毎日見回り。" },
+  zucchini: { name:"ズッキーニ", cat:"実もの", emoji:"🥒", basis:"植え付け", water:2, unit:"本",
+    harvest:{ from:45, to:100, label:"収穫開始(開花後4〜7日)" },
+    events:[
+      { d:7,  label:"支柱で株を固定(風で折れやすい)" },
+      { d:20, label:"防除(うどんこ病予防)" },
+      { d:25, label:"追肥①(開花が始まったら)" },
+      { d:35, label:"朝の人工授粉を習慣に" },
+      { d:40, label:"追肥②(以後2週間おき)" }
+    ],
+    tip:"朝の人工授粉で実つきが安定。風に弱いので支柱を。" },
   goya:      { name:"ゴーヤ",       cat:"実もの", emoji:"🥒", basis:"植え付け", water:1, unit:"本", harvest:{from:50,to:110}, events:[{d:21,label:"追肥(1回目)"},{d:42,label:"追肥(2回目)"}], tip:"ネットにつるを誘引。緑のカーテンにも。" },
-  kabocha:   { name:"カボチャ",     cat:"実もの", emoji:"🎃", basis:"植え付け", water:3, unit:"個", harvest:{from:90,to:120}, events:[{d:25,label:"追肥(1回目)"},{d:45,label:"追肥(2回目)"}], tip:"人工授粉は朝のうちに。" },
-  suika:     { name:"スイカ",       cat:"実もの", emoji:"🍉", basis:"植え付け", water:3, unit:"個", harvest:{from:85,to:110}, events:[{d:25,label:"追肥(1回目)"},{d:45,label:"追肥(2回目)"}], tip:"受粉日をメモすると食べ頃が分かる(約40〜45日後)。" },
-  okra:      { name:"オクラ",       cat:"実もの", emoji:"🌿", basis:"植え付け", water:2, unit:"本", harvest:{from:50,to:120}, events:[{d:20,label:"追肥(1回目)"},{d:40,label:"追肥(2回目)"},{d:60,label:"追肥(3回目)"}], tip:"採り遅れると固くなるので毎日見回り。" },
-  edamame:   { name:"エダマメ",     cat:"いも・豆", emoji:"🫛", basis:"種まき",   water:2, unit:"袋", harvest:{from:75,to:90},  events:[{d:20,label:"追肥・土寄せ"}], tip:"採れたてを塩ゆでが一番。" },
-  corn:      { name:"トウモロコシ", cat:"実もの", emoji:"🌽", basis:"種まき",   water:2, unit:"本", harvest:{from:80,to:95},  events:[{d:20,label:"追肥(1回目)"},{d:40,label:"追肥(2回目)"}], tip:"ヒゲが茶色くなったら収穫合図。" },
-  ichigo:    { name:"イチゴ",       cat:"実もの", emoji:"🍓", basis:"植え付け", water:3, unit:"個", harvest:{from:200,to:240}, events:[{d:30,label:"追肥(1回目)"},{d:150,label:"追肥(2回目・春先)"},{d:170,label:"敷きわら"}], tip:"秋植え。ランナーは春まで切る。" },
-  jagaimo:   { name:"ジャガイモ",   cat:"いも・豆", emoji:"🥔", basis:"植え付け", water:4, unit:"kg", harvest:{from:90,to:110}, events:[{d:20,label:"芽かき"},{d:30,label:"追肥・土寄せ(1回目)"},{d:50,label:"追肥・土寄せ(2回目)"}], tip:"土寄せで青いも防止。" },
-  satsumaimo:{ name:"サツマイモ",   cat:"いも・豆", emoji:"🍠", basis:"植え付け", water:5, unit:"kg", harvest:{from:110,to:150}, events:[{d:60,label:"つる返し(1回目)"},{d:80,label:"つる返し(2回目)"}], tip:"肥料は控えめが甘くなるコツ。" },
-  satoimo:   { name:"サトイモ",     cat:"いも・豆", emoji:"🥔", basis:"植え付け", water:2, unit:"kg", harvest:{from:150,to:180}, events:[{d:30,label:"追肥・土寄せ(1回目)"},{d:60,label:"追肥・土寄せ(2回目)"},{d:90,label:"追肥・土寄せ(3回目)"}], tip:"乾燥が苦手。夏は敷きわらで保湿。" },
-  daikon:    { name:"ダイコン",     cat:"根もの", emoji:"🌱", basis:"種まき",   water:2, unit:"本", harvest:{from:60,to:90},  events:[{d:10,label:"間引き(1回目)"},{d:20,label:"間引き(2回目)"},{d:25,label:"追肥"}], tip:"間引き菜も美味しくいただける。" },
-  kabu:      { name:"カブ",         cat:"根もの", emoji:"🌱", basis:"種まき",   water:2, unit:"個", harvest:{from:40,to:60},  events:[{d:10,label:"間引き(1回目)"},{d:18,label:"間引き(2回目)"},{d:20,label:"追肥"}], tip:"採り遅れると割れるので早めに。" },
-  ninjin:    { name:"ニンジン",     cat:"根もの", emoji:"🥕", basis:"種まき",   water:2, unit:"本", harvest:{from:100,to:130}, events:[{d:15,label:"間引き(1回目)"},{d:30,label:"間引き(2回目)"},{d:35,label:"追肥"}], tip:"発芽まで乾かさないのが最大のコツ。" },
-  tamanegi:  { name:"タマネギ",     cat:"根もの", emoji:"🧅", basis:"植え付け", water:3, unit:"個", harvest:{from:180,to:220}, events:[{d:40,label:"追肥(1回目)"},{d:120,label:"追肥(2回目・止め肥)"}], tip:"葉が倒れたら収穫の合図。" },
-  negi:      { name:"ネギ",         cat:"根もの", emoji:"🧅", basis:"植え付け", water:3, unit:"本", harvest:{from:90,to:180}, events:[{d:30,label:"追肥・土寄せ(1回目)"},{d:60,label:"追肥・土寄せ(2回目)"},{d:90,label:"追肥・土寄せ(3回目)"}], tip:"土寄せするほど白い部分が長くなる。" },
-  ninniku:   { name:"ニンニク",     cat:"根もの", emoji:"🧄", basis:"植え付け", water:3, unit:"個", harvest:{from:210,to:240}, events:[{d:30,label:"追肥(1回目)"},{d:120,label:"追肥(2回目)"}], tip:"春の花芽(にんにくの芽)は摘んで美味しく。" },
-  horenso:   { name:"ホウレンソウ", cat:"葉もの", emoji:"🥬", basis:"種まき",   water:2, unit:"束", harvest:{from:30,to:50},  events:[{d:10,label:"間引き"},{d:20,label:"追肥"}], tip:"寒さに当たると甘くなる。" },
-  komatsuna: { name:"コマツナ",     cat:"葉もの", emoji:"🥬", basis:"種まき",   water:2, unit:"束", harvest:{from:25,to:40},  events:[{d:8,label:"間引き"},{d:15,label:"追肥"}], tip:"少しずつ時期をずらして播くと長く楽しめる。" },
+  pumpkin: { name:"カボチャ", cat:"実もの", emoji:"🎃", basis:"植え付け", water:3, unit:"個",
+    harvest:{ from:90, to:120, label:"収穫の目安(ヘタがコルク状になったら)" },
+    events:[
+      { d:14, label:"親づるの摘心(子づるを伸ばす)" },
+      { d:30, label:"追肥①(つるが伸び始めたら)" },
+      { d:35, label:"防除(うどんこ病)" },
+      { d:45, label:"人工授粉(朝9時まで)" },
+      { d:60, label:"追肥②(果実がこぶし大)" },
+      { d:70, label:"玉直し(実の下にマットを敷く)" }
+    ],
+    tip:"人工授粉は朝のうちに。" },
+  watermelon: { name:"スイカ", cat:"実もの", emoji:"🍉", basis:"植え付け", water:3, unit:"個",
+    harvest:{ from:90, to:110, label:"収穫の目安(受粉から35〜40日)" },
+    events:[
+      { d:14, label:"親づるの摘心・整枝" },
+      { d:30, label:"追肥①(つるが伸び始めたら)" },
+      { d:35, label:"防除(うどんこ病・アブラムシ)" },
+      { d:45, label:"人工授粉(受粉日をメモしておく)" },
+      { d:60, label:"追肥②(果実がこぶし大)" },
+      { d:75, label:"玉直し(均等に日を当てる)" }
+    ],
+    tip:"受粉日をメモすると食べ頃がわかる(約35〜40日後)。" },
+  strawberry: { name:"イチゴ", cat:"実もの", emoji:"🍓", basis:"植え付け", water:3, unit:"個",
+    harvest:{ from:210, to:240, label:"収穫の目安(開花から30〜40日)" },
+    events:[
+      { d:14,  label:"活着確認(クラウンを埋めない)" },
+      { d:30,  label:"追肥①(11月頃の目安)" },
+      { d:120, label:"追肥②(春の芽出し肥)" },
+      { d:140, label:"マルチ張り・ランナーと古葉の除去" },
+      { d:160, label:"防除(うどんこ病・アブラムシ)" }
+    ],
+    tip:"秋植え。ランナーは春まで切る。" },
+  corn: { name:"トウモロコシ", cat:"実もの", emoji:"🌽", basis:"種まき", water:2, unit:"本",
+    harvest:{ from:85, to:95, label:"収穫の目安(絹糸が茶色くなって20日後)" },
+    events:[
+      { d:14, label:"間引き(1本立ちに)" },
+      { d:30, label:"追肥①(本葉6〜8枚)" },
+      { d:50, label:"追肥②+土寄せ(雄穂が出た頃)" },
+      { d:55, label:"防除(アワノメイガ対策)" }
+    ],
+    tip:"ヒゲが茶色くなったら収穫合図。" },
+  /* ───── 葉もの(v1: 葉菜) ───── */
+  cabbage: { name:"キャベツ", cat:"葉もの", emoji:"🥬", basis:"植え付け", water:2, unit:"個",
+    harvest:{ from:75, to:100, label:"収穫の目安(球が固く締まったら)" },
+    events:[
+      { d:14, label:"防除①(アオムシ・コナガ)" },
+      { d:20, label:"追肥①" },
+      { d:35, label:"防除②" },
+      { d:40, label:"追肥②(結球が始まる頃)" }
+    ],
+    tip:"青虫の見回りをこまめに。" },
+  hakusai: { name:"ハクサイ", cat:"葉もの", emoji:"🥬", basis:"植え付け", water:2, unit:"個",
+    harvest:{ from:70, to:100, label:"収穫の目安(頭を押して固ければOK)" },
+    events:[
+      { d:14, label:"防除①(アオムシ・コナガ・初期が肝心)" },
+      { d:20, label:"追肥①" },
+      { d:35, label:"追肥②(結球が始まる頃)" },
+      { d:40, label:"防除②" }
+    ],
+    tip:"結球しはじめたら水切れさせない。" },
+  lettuce: { name:"レタス", cat:"葉もの", emoji:"🥗", basis:"植え付け", water:2, unit:"個",
+    harvest:{ from:60, to:80, label:"収穫の目安(球がゆるく締まったら)" },
+    events:[
+      { d:10, label:"活着確認・株元の乾燥に注意" },
+      { d:20, label:"追肥①" },
+      { d:30, label:"防除(アブラムシ・ヨトウムシ)" },
+      { d:40, label:"追肥②(結球が始まる頃)" }
+    ],
+    tip:"高温期はとう立ちに注意。" },
+  spinach: { name:"ホウレンソウ", cat:"葉もの", emoji:"🍃", basis:"種まき", water:2, unit:"束",
+    harvest:{ from:40, to:60, label:"収穫の目安(草丈20cmから)" },
+    events:[
+      { d:10, label:"間引き①(株間3cm)" },
+      { d:20, label:"追肥+間引き②(株間6cm)" }
+    ],
+    tip:"寒さに当たると甘くなる。" },
+  komatsuna: { name:"コマツナ", cat:"葉もの", emoji:"🌿", basis:"種まき", water:2, unit:"束",
+    harvest:{ from:35, to:50, label:"収穫の目安(草丈20〜25cm)" },
+    events:[
+      { d:7,  label:"間引き①(株間3cm)" },
+      { d:14, label:"間引き②(株間5〜6cm)" },
+      { d:18, label:"追肥" },
+      { d:20, label:"防虫ネットの点検(アオムシ・コナガ)" }
+    ],
+    tip:"少しずつ時期をずらして播くと長く楽しめる。" },
   mizuna:    { name:"ミズナ",       cat:"葉もの", emoji:"🥬", basis:"種まき",   water:2, unit:"束", harvest:{from:30,to:50},  events:[{d:8,label:"間引き"},{d:15,label:"追肥"}], tip:"" },
   shungiku:  { name:"シュンギク",   cat:"葉もの", emoji:"🥬", basis:"種まき",   water:2, unit:"束", harvest:{from:30,to:60},  events:[{d:20,label:"追肥"}], tip:"摘み取り収穫なら長く楽しめる。" },
-  lettuce:   { name:"レタス",       cat:"葉もの", emoji:"🥬", basis:"植え付け", water:2, unit:"個", harvest:{from:30,to:60},  events:[{d:15,label:"追肥(1回目)"},{d:30,label:"追肥(2回目)"}], tip:"高温期はとう立ちに注意。" },
-  cabbage:   { name:"キャベツ",     cat:"葉もの", emoji:"🥬", basis:"植え付け", water:2, unit:"個", harvest:{from:60,to:90},  events:[{d:15,label:"追肥(1回目)"},{d:35,label:"追肥(2回目)"}], tip:"青虫の見回りをこまめに。" },
-  hakusai:   { name:"ハクサイ",     cat:"葉もの", emoji:"🥬", basis:"植え付け", water:2, unit:"個", harvest:{from:60,to:90},  events:[{d:15,label:"追肥(1回目)"},{d:35,label:"追肥(2回目)"}], tip:"結球しはじめたら水切れさせない。" },
-  broccoli:  { name:"ブロッコリー", cat:"葉もの", emoji:"🥦", basis:"植え付け", water:2, unit:"個", harvest:{from:70,to:100}, events:[{d:15,label:"追肥(1回目)"},{d:35,label:"追肥(2回目)"}], tip:"頂花蕾のあとも側花蕾が楽しめる。" },
+  broccoli: { name:"ブロッコリー", cat:"葉もの", emoji:"🥦", basis:"植え付け", water:2, unit:"個",
+    harvest:{ from:80, to:110, label:"収穫の目安(頂花蕾12〜15cm・蕾が固いうち)" },
+    events:[
+      { d:14, label:"防除①(アオムシ・コナガ)" },
+      { d:20, label:"追肥①" },
+      { d:40, label:"追肥②(花蕾ができる前)" },
+      { d:45, label:"防除②" }
+    ],
+    tip:"頂花蕾のあとも側花蕾が楽しめる。" },
+  negi: { name:"長ネギ", cat:"葉もの", emoji:"🌱", basis:"植え付け", water:3, unit:"本",
+    harvest:{ from:150, to:210, label:"収穫の目安(白い部分が30cmほど)" },
+    events:[
+      { d:30,  label:"追肥①+土寄せ①" },
+      { d:60,  label:"追肥②+土寄せ②" },
+      { d:90,  label:"追肥③+土寄せ③" },
+      { d:120, label:"最終の土寄せ(葉の分かれ目まで)" }
+    ],
+    tip:"土寄せするほど白い部分が長くなる。" },
+  /* ───── 根もの(v1: 根菜) ───── */
+  daikon: { name:"ダイコン", cat:"根もの", emoji:"🌱", basis:"種まき", water:2, unit:"本",
+    harvest:{ from:65, to:90, label:"収穫の目安(首の直径6〜7cm)" },
+    events:[
+      { d:10, label:"間引き①(2本立ちに)" },
+      { d:20, label:"間引き②(1本立ちに)" },
+      { d:25, label:"追肥+土寄せ" },
+      { d:30, label:"防除(アオムシ・キスジノミハムシ)" }
+    ],
+    tip:"間引き菜も美味しくいただける。" },
+  kabu: { name:"カブ", cat:"根もの", emoji:"🌱", basis:"種まき", water:2, unit:"個",
+    harvest:{ from:50, to:65, label:"収穫の目安(直径5〜6cm・採り遅れで裂根)" },
+    events:[
+      { d:10, label:"間引き①(株間4cm)" },
+      { d:20, label:"追肥+間引き②(株間10cm)" },
+      { d:25, label:"防除(アブラムシ・キスジノミハムシ)" }
+    ],
+    tip:"採り遅れると割れるので早めに。" },
+  carrot: { name:"ニンジン", cat:"根もの", emoji:"🥕", basis:"種まき", water:2, unit:"本",
+    harvest:{ from:100, to:130, label:"収穫の目安(根の直径4〜5cm)" },
+    events:[
+      { d:14, label:"間引き①(株間3cm・発芽が勝負)" },
+      { d:30, label:"間引き②(株間10cm・本葉5〜6枚)" },
+      { d:35, label:"追肥+土寄せ(肩の緑化防止)" }
+    ],
+    tip:"発芽まで乾かさないのが最大のコツ。" },
+  onion: { name:"タマネギ", cat:"根もの", emoji:"🧅", basis:"植え付け", water:3, unit:"個",
+    harvest:{ from:240, to:270, label:"収穫の目安(葉が8割倒れたら・晴天日に)" },
+    events:[
+      { d:14,  label:"活着確認・枯れた苗は補植" },
+      { d:60,  label:"追肥①(12月頃の目安)" },
+      { d:120, label:"追肥②(2月の止め肥・遅れると貯蔵性低下)" },
+      { d:180, label:"防除(べと病に注意・春先)" }
+    ],
+    tip:"葉が倒れたら収穫の合図。" },
+  garlic: { name:"ニンニク", cat:"根もの", emoji:"🧄", basis:"植え付け", water:3, unit:"個",
+    harvest:{ from:240, to:270, label:"収穫の目安(葉が3〜5割枯れたら)" },
+    events:[
+      { d:30,  label:"追肥①(発芽がそろったら)" },
+      { d:150, label:"追肥②(春の芽出し肥・2月下旬頃)" },
+      { d:180, label:"とう摘み(花芽は摘んで芽ニンニクに)" }
+    ],
+    tip:"春の花芽(にんにくの芽)は摘んで美味しく。" },
+  /* ───── いも・豆 ───── */
+  potato: { name:"ジャガイモ", cat:"いも・豆", emoji:"🥔", basis:"植え付け", water:4, unit:"kg",
+    harvest:{ from:95, to:110, label:"収穫の目安(茎葉が黄変したら・晴天日に)" },
+    events:[
+      { d:30, label:"芽かき(2〜3本残す)" },
+      { d:35, label:"追肥①+土寄せ①" },
+      { d:55, label:"追肥②+土寄せ②(花が咲く頃)" },
+      { d:60, label:"防除(疫病予防)" }
+    ],
+    tip:"土寄せで青いも防止。" },
+  sweetpotato: { name:"サツマイモ", cat:"いも・豆", emoji:"🍠", basis:"植え付け", water:5, unit:"kg",
+    harvest:{ from:120, to:150, label:"収穫の目安(霜が降りる前に・晴天日に)" },
+    events:[
+      { d:14, label:"活着確認(根付くまで水切れ注意)" },
+      { d:30, label:"追肥は原則不要(つるボケ防止)" },
+      { d:40, label:"つる返し①" },
+      { d:70, label:"つる返し②" }
+    ],
+    tip:"肥料は控えめが甘くなるコツ。" },
+  satoimo: { name:"サトイモ", cat:"いも・豆", emoji:"🌰", basis:"植え付け", water:2, unit:"kg",
+    harvest:{ from:170, to:200, label:"収穫の目安(霜が降りる前に)" },
+    events:[
+      { d:30,  label:"芽かき(1株1本に・出芽をそろえる)" },
+      { d:45,  label:"追肥①+土寄せ①" },
+      { d:70,  label:"追肥②+土寄せ②(草丈50cmの頃)" },
+      { d:85,  label:"敷きわら・夏の水切れ対策(乾燥に弱い)" },
+      { d:100, label:"追肥③+最終土寄せ" }
+    ],
+    tip:"乾燥が苦手。夏は敷きわらで保湿。" },
+  edamame: { name:"エダマメ", cat:"いも・豆", emoji:"🫛", basis:"種まき", water:2, unit:"袋",
+    harvest:{ from:80, to:95, label:"収穫の目安(さやがふくらんだら)" },
+    events:[
+      { d:14, label:"間引き・土寄せ①" },
+      { d:30, label:"追肥+土寄せ②(花が咲く前・肥料控えめ)" },
+      { d:40, label:"防除(カメムシ対策・開花期)" }
+    ],
+    tip:"採れたてを塩ゆでが一番。" },
   soramame:  { name:"ソラマメ",     cat:"いも・豆", emoji:"🫛", basis:"種まき",   water:3, unit:"袋", harvest:{from:150,to:180}, events:[{d:90,label:"追肥(春先)"},{d:100,label:"整枝・支柱立て"}], tip:"アブラムシは早めに対処。" },
   endou:     { name:"エンドウ",     cat:"いも・豆", emoji:"🫛", basis:"種まき",   water:3, unit:"袋", harvest:{from:150,to:190}, events:[{d:90,label:"支柱・ネット張り"},{d:100,label:"追肥"}], tip:"秋まきは大きくしすぎず冬越しさせる。" },
-  bara:      { name:"バラ",         cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪", harvest:null, events:[], annual:[
-      {m:1,d:25,label:"冬剪定"},{m:2,d:10,label:"寒肥"},{m:4,d:15,label:"消毒はじめ(うどんこ・アブラムシ)"},
-      {m:5,d:15,label:"花がら摘み・見回り"},{m:6,d:5,label:"お礼肥"},{m:8,d:31,label:"夏剪定"},
-      {m:9,d:10,label:"秋の追肥"},{m:12,d:20,label:"落ち葉掃除・株元の整理"}
-    ], tip:"開花は「収穫を記録」で輪数をつけると年ごとに比べられる。" }
+  /* ───── 花・その他(v1: バラ7種) ───── */
+  rose_established: { name:"バラ(育成株・年間管理)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪",
+    harvest:null,
+    events:[],
+    annual:[
+      { m:1,  d:20, label:"冬剪定(株の1/2〜1/3まで切り戻す本剪定)" },
+      { m:2,  d:1,  label:"寒肥(堆肥+有機肥料を株まわりに)" },
+      { m:3,  d:5,  label:"芽出し肥" },
+      { m:3,  d:20, label:"防除①(芽吹き後・黒星病予防スタート)" },
+      { m:4,  d:15, label:"防除②(アブラムシ・うどんこ病)" },
+      { m:5,  d:15, label:"春の開花シーズン" },
+      { m:6,  d:5,  label:"花がら摘み・お礼肥" },
+      { m:6,  d:20, label:"防除③(梅雨の黒星病・1年で最重要)" },
+      { m:7,  d:10, label:"夏の追肥(暑さで弱っていれば控えめに)" },
+      { m:8,  d:25, label:"夏剪定(四季咲きは浅めに・秋の花のため)" },
+      { m:9,  d:5,  label:"秋の追肥" },
+      { m:9,  d:20, label:"防除④(秋の病害虫)" },
+      { m:10, d:15, label:"秋の開花シーズン" },
+      { m:12, d:15, label:"つるバラの誘引・鉢の植え替え適期" }
+    ],
+    tip:"すでに育っている2年目以降のバラ。剪定・寒肥・防除など1年の手入れを毎年自動でくり返します。開花は「収穫を記録」で輪数をつけると年ごとに比べられる。" },
+  rose_repeat: { name:"バラ(四季咲き)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪",
+    harvest:null,
+    events:[
+      { d:14,  label:"活着確認(植え付け後の水切れ注意)" },
+      { d:28,  label:"追肥①(月1回ペースで継続)" },
+      { d:28,  label:"防除①(黒星病・うどんこ病予防)" },
+      { d:42,  label:"防除②(アブラムシ・ハダニ)" },
+      { d:55,  label:"追肥②" },
+      { d:60,  label:"防除③" },
+      { d:75,  label:"春の開花目安" },
+      { d:88,  label:"花がら摘み・お礼肥(秋咲きにつなげる)" },
+      { d:110, label:"追肥③(夏の浅剪定後)" },
+      { d:120, label:"防除④" },
+      { d:150, label:"秋の開花目安" }
+    ],
+    tip:"春・秋と繰り返し咲く。花後のお礼肥と夏剪定がポイント。" },
+  rose_bush: { name:"バラ(木立ち)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪",
+    harvest:null,
+    events:[
+      { d:14,  label:"活着確認・支柱立て" },
+      { d:30,  label:"防除①(黒星病中心)" },
+      { d:30,  label:"追肥①" },
+      { d:45,  label:"防除②(うどんこ病・アブラムシ)" },
+      { d:60,  label:"追肥②" },
+      { d:65,  label:"防除③" },
+      { d:80,  label:"開花の目安" },
+      { d:95,  label:"花がら摘み・お礼肥" },
+      { d:140, label:"秋の開花目安(四季咲き品種)" }
+    ],
+    tip:"HTやフロリバンダ。直立性が強く支柱が必要なことも。" },
+  rose_shrub: { name:"バラ(シュラブ)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪",
+    harvest:null,
+    events:[
+      { d:14,  label:"活着確認" },
+      { d:21,  label:"仕立て方向を決める(木立ち/半つる)" },
+      { d:35,  label:"防除①(黒星病予防)" },
+      { d:35,  label:"追肥①" },
+      { d:55,  label:"防除②(うどんこ病・ハダニ)" },
+      { d:60,  label:"追肥②" },
+      { d:85,  label:"開花の目安" },
+      { d:100, label:"花がら摘み・お礼肥" }
+    ],
+    tip:"半つる〜木立ちの中間。仕立て方で樹形が変わる。比較的丈夫。" },
+  rose_climbing: { name:"バラ(つるバラ)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪",
+    harvest:null,
+    events:[
+      { d:7,   label:"誘引スタート・フェンスやネットに固定" },
+      { d:14,  label:"活着確認・水切れ注意" },
+      { d:35,  label:"防除①(黒星病・うどんこ病)" },
+      { d:40,  label:"追肥①" },
+      { d:60,  label:"防除②" },
+      { d:70,  label:"追肥②" },
+      { d:75,  label:"防除③(開花前後)" },
+      { d:95,  label:"開花の目安" },
+      { d:110, label:"花がら摘み・お礼肥" },
+      { d:130, label:"新シュートの誘引(来年の花芽を確保)" }
+    ],
+    tip:"フェンス・パーゴラへの誘引が鍵。冬の誘引で翌年の花数が決まる。" },
+  rose_mini: { name:"バラ(ミニバラ)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪",
+    harvest:null,
+    events:[
+      { d:14,  label:"活着確認" },
+      { d:21,  label:"防除①(アブラムシ注意)" },
+      { d:25,  label:"追肥①(少量を2週間おき)" },
+      { d:40,  label:"防除②(うどんこ病・ハダニ)" },
+      { d:50,  label:"追肥②" },
+      { d:60,  label:"開花の目安" },
+      { d:72,  label:"花がら摘み・お礼肥" },
+      { d:110, label:"秋の開花目安(四季咲き品種)" }
+    ],
+    tip:"コンパクトで初心者向き。鉢植えにも最適。" },
+  rose_english: { name:"バラ(イングリッシュ)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪",
+    harvest:null,
+    events:[
+      { d:14,  label:"活着確認" },
+      { d:25,  label:"仕立て方向を決める(木立ち/半つる)" },
+      { d:35,  label:"防除①(比較的強いが黒星病に注意)" },
+      { d:35,  label:"追肥①" },
+      { d:60,  label:"防除②" },
+      { d:65,  label:"追肥②" },
+      { d:90,  label:"開花の目安(香りが出始めたら間近)" },
+      { d:105, label:"花がら摘み・お礼肥" },
+      { d:150, label:"秋の開花目安" }
+    ],
+    tip:"オールドローズ風の豊かな香りと花形。比較的病害虫に強い。" }
 };
 HB.CATS = ["実もの","葉もの","根もの","いも・豆","花・その他"];
 HB.DBKEYS = Object.keys(HB.DB);
@@ -354,7 +685,7 @@ HB.tasksForDate = function(state, dateStr){
       var wEnd = t.harvest ? (t.harvest.to + 14) : 3650;
       if(t.water && age > 0 && age % t.water === 0 && age <= wEnd) push("水やり","water");
       (t.events||[]).forEach(function(e){ if(e.d === age) push(e.label,"event"); });
-      if(t.harvest && age === t.harvest.from) push("収穫をはじめられます","harvest");
+      if(t.harvest && age === t.harvest.from) push(t.harvest.label || "収穫をはじめられます","harvest");
     }
     (t.annual||[]).forEach(function(e){
       if(d.getMonth()+1 === e.m && d.getDate() === e.d) push(e.label,"event");
