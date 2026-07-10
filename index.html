@@ -204,7 +204,7 @@ label.f{display:block;font-size:14px;color:var(--muted);margin:12px 0 4px;}
 <script id="hb-core">
 "use strict";
 var HB = {};
-HB.VERSION = "2.2.0";
+HB.VERSION = "2.3.0";
 HB.KEY = "hatabiyori:v2";
 /* 天気の観測地点。引っ越したらここを変えるだけ。 */
 HB.LOC = { name: "因島", lat: 34.30, lon: 133.19 };
@@ -259,12 +259,39 @@ HB.storageOK = (function(){
     return true;
   }catch(e){ return false; }
 })();
+HB.syncDefaults = function(){
+  return { url:"", token:"", auto:true, lastSync:null, lastError:null, sentHarvestIds:[], lastDailyLogDate:null };
+};
+/* 旧データに新しい項目を足す(何度呼んでも安全・こわさない)。
+   Drive同期の設定(sync)と、株ごとの追加項目(株数・そだち・メモ・じぶん予定・今季おわり)の
+   両方をここで補う。既存の値は一切書き換えない。 */
+HB.migrate = function(s){
+  if(!s) return s;
+  s.crops = s.crops || []; s.done = s.done || {}; s.harvests = s.harvests || [];
+  s.settings = s.settings || {}; s.meta = s.meta || {};
+  if(s.settings.sound === undefined) s.settings.sound = true;
+  if(!("lastBackup" in s.settings)) s.settings.lastBackup = null;
+  s.settings.sync = Object.assign(HB.syncDefaults(), s.settings.sync || {});
+  if(!Array.isArray(s.settings.sync.sentHarvestIds)) s.settings.sync.sentHarvestIds = [];
+  s.crops.forEach(function(c){
+    if(c.count == null) c.count = 1;
+    if(!c.maturity) c.maturity = "normal";
+    if(!c.notes) c.notes = [];
+    if(!c.custom) c.custom = [];
+    if(c.closed == null) c.closed = false;
+    if(c.memo && c.notes.length === 0){
+      c.notes.push({ id:"m-"+c.id, date: ymd(new Date()), text: c.memo });
+      c.memo = "";
+    }
+  });
+  return s;
+};
 HB.defaultState = function(){
-  return { crops:[], done:{}, harvests:[], settings:{ sound:true, lastBackup:null }, meta:{ created:new Date().toISOString() } };
+  return { crops:[], done:{}, harvests:[], settings:{ sound:true, lastBackup:null, sync:HB.syncDefaults() }, meta:{ created:new Date().toISOString() } };
 };
 HB.load = function(){
   if(!HB.storageOK) return null;
-  try{ var r=localStorage.getItem(HB.KEY); return r? JSON.parse(r) : null; }
+  try{ var r=localStorage.getItem(HB.KEY); return r? HB.migrate(JSON.parse(r)) : null; }
   catch(e){ return null; }
 };
 HB.saveNow = function(state){
@@ -755,22 +782,7 @@ HB.stageEmoji = function(c, todayStr){
   if(age < goal * 0.75) return "🌿";
   return t.emoji;
 };
-/* 旧データに新しい項目を足す(何度呼んでも安全・こわさない) */
-HB.migrateState = function(s){
-  if(!s) return s;
-  (s.crops||[]).forEach(function(c){
-    if(c.count == null) c.count = 1;
-    if(!c.maturity) c.maturity = "normal";
-    if(!c.notes) c.notes = [];
-    if(!c.custom) c.custom = [];
-    if(c.closed == null) c.closed = false;
-    if(c.memo && c.notes.length === 0){
-      c.notes.push({ id:"m-"+c.id, date: ymd(new Date()), text: c.memo });
-      c.memo = "";
-    }
-  });
-  return s;
-};
+/* (データ移行は hb-core の HB.migrate に統合済み) */
 HB.upcoming = function(state, fromDate, days, cropId){
   var out = [];
   for(var i=1;i<=days;i++){
@@ -836,6 +848,65 @@ HB.buildDigest = function(state, todayStr, weatherLine){
   return L.join("\n");
 };
 
+/* ---------- Drive自動保存(Apps Script受付係へ送るデータ作り) ---------- */
+HB.stripForSync = function(state){
+  return {
+    crops: state.crops.map(function(c){
+      return { id:c.id, key:c.key, name:c.name, planted:c.planted, memo:c.memo || "",
+               count:c.count || 1, maturity:c.maturity || "normal",
+               notes:c.notes || [], custom:c.custom || [], closed:!!c.closed,
+               hasPhoto: !!c.photo };
+    }),
+    done: state.done,
+    harvests: state.harvests,
+    settings: { sound: state.settings.sound, lastBackup: state.settings.lastBackup },
+    meta: state.meta
+  };
+};
+HB.buildSyncPayload = function(state, weather, todayStr){
+  var sy = (state.settings && state.settings.sync) || {};
+  var sent = sy.sentHarvestIds || [];
+  var newHs = state.harvests.filter(function(h){ return sent.indexOf(h.id) < 0; });
+  var rows = newHs.map(function(h){
+    var c = null;
+    for(var i = 0; i < state.crops.length; i++){ if(state.crops[i].id === h.cropId) c = state.crops[i]; }
+    return [h.id, h.date, h.cropName, h.qty, h.unit, c ? daysBetween(c.planted, h.date) : ""];
+  });
+  var w = null;
+  if(weather && weather.daily){
+    var d = weather.daily;
+    w = { label: HB.wmo(d.weather_code[0]).label,
+          tmax: Math.round(d.temperature_2m_max[0]),
+          tmin: Math.round(d.temperature_2m_min[0]),
+          pp: d.precipitation_probability_max ? d.precipitation_probability_max[0] : "" };
+  }
+  var dailyRow = null;
+  if(sy.lastDailyLogDate !== todayStr){
+    var tasks = HB.tasksForDate(state, todayStr);
+    var doneN = tasks.filter(function(t){ return !!state.done[t.key]; }).length;
+    dailyRow = [todayStr, w ? w.label : "", w ? w.tmax : "", w ? w.tmin : "", w ? w.pp : "", tasks.length, doneN];
+  }
+  var wline = w ? (w.label + " 最高" + w.tmax + "℃/最低" + w.tmin + "℃" + (w.pp !== "" && w.pp != null ? " 降水確率" + w.pp + "%" : "")) : null;
+  return {
+    payload: { token: sy.token || "", app: "hatabiyori", version: HB.VERSION, sentAt: new Date().toISOString(),
+               snapshot: HB.stripForSync(state), digest: HB.buildDigest(state, todayStr, wline),
+               harvestRows: rows, dailyRow: dailyRow },
+    sentIds: newHs.map(function(h){ return h.id; }),
+    dailyDate: dailyRow ? todayStr : null
+  };
+};
+/* ---------- 自動化タスク用テキスト(予定表つき) ---------- */
+HB.buildAutomationText = function(state, todayStr, days){
+  days = days || 90;
+  var L = [HB.buildDigest(state, todayStr, null), "", "■ 今後" + days + "日の予定表(水やり以外):"];
+  var up = HB.upcoming(state, todayStr, days);
+  if(up.length === 0) L.push("・(なし)");
+  up.forEach(function(u){ L.push("・" + u.date + " " + u.cropName + ": " + u.label); });
+  L.push("");
+  L.push("この予定表をもとに、毎朝その日の畑仕事をやさしい言葉で知らせてください。");
+  return L.join("\n");
+};
+
 /* ---------- バックアップの書き出し・読み込み ---------- */
 HB.exportData = function(state){
   return { app:"hatabiyori", version:2, exportedAt:new Date().toISOString(), data:state };
@@ -847,11 +918,7 @@ HB.parseImport = function(text){
   var o;
   try{ o = JSON.parse(text); }catch(e){ return { ok:false, error:"notjson" }; }
   if(o && o.app === "hatabiyori" && o.data && o.data.crops){
-    var s = o.data;
-    s.done = s.done || {}; s.harvests = s.harvests || [];
-    s.settings = s.settings || { sound:true, lastBackup:null };
-    s.meta = s.meta || {};
-    return { ok:true, state: HB.migrateState(s) };
+    return { ok:true, state: HB.migrate(o.data) };
   }
   /* 旧・畑日和(Claude版)などの別形式 → 中身は捨てずに預かる */
   return { ok:false, error:"legacy", raw:o };
@@ -1437,8 +1504,44 @@ function RecordsView({ state, todayStr, api }){
   );
 }
 
+/* ---------- Drive自動保存カード ---------- */
+function SyncCard({ state, api, syncing }){
+  const sy = state.settings.sync || {};
+  const [open, setOpen] = useState(false);
+  let status = "未設定（下の「うら設定」からご家族が設定します）";
+  if(sy.url){
+    status = sy.lastSync ? ("最終保存: " + HB.jpDate(HB.ymd(new Date(sy.lastSync)))) : "設定ずみ・まだ保存していません";
+  }
+  return (
+    <section className="card">
+      <h2>Drive自動保存 ☁️</h2>
+      <p className="note">畑の記録（写真以外）と今日の天気を、Google Driveの「畑日和」フォルダへ自動で届けます。ChatGPTの分析にも、もしもの時の控えにもなります。</p>
+      <div className="kv"><span>ようす</span><b>{sy.lastError ? "⚠️ うまくいっていません" : status}</b></div>
+      {sy.lastError && <p className="note">直近のエラー: {String(sy.lastError).slice(0, 80)}</p>}
+      <div style={{height:8}}></div>
+      <button className="btn" onClick={() => api.syncNow(false)} disabled={!!syncing}>
+        {syncing ? "保存しています…" : "☁️ 今すぐDriveに保存"}
+      </button>
+      <div style={{height:8}}></div>
+      <button className="btn gray small" onClick={() => setOpen(!open)}>{open ? "うら設定をとじる" : "うら設定（ご家族用）"}</button>
+      {open &&
+        <div>
+          <label className="f">受付係のURL（DRIVE_SETUP.md の手順で作成）</label>
+          <input type="text" value={sy.url || ""} placeholder="https://script.google.com/macros/s/…/exec"
+            onChange={e => api.setSyncField("url", e.target.value.trim())} />
+          <label className="f">あいことば（受付係の TOKEN と同じ文字列）</label>
+          <input type="text" value={sy.token || ""} onChange={e => api.setSyncField("token", e.target.value.trim())} />
+          <label className="f">自動保存（開いた時と収穫記録のあと）</label>
+          <button className="btn ghost small" onClick={() => api.setSyncField("auto", !(sy.auto !== false))}>
+            {sy.auto !== false ? "自動保存は オン" : "自動保存は オフ"}
+          </button>
+        </div>}
+    </section>
+  );
+}
+
 /* ---------- せってい ---------- */
-function SettingsView({ state, api }){
+function SettingsView({ state, api, syncing }){
   const fileRef = useRef(null);
   const lb = state.settings.lastBackup;
   const lbText = lb ? HB.jpDate(HB.ymd(new Date(lb))) : "まだ一度もしていません";
@@ -1456,6 +1559,7 @@ function SettingsView({ state, api }){
         </div>
         <input ref={fileRef} type="file" accept=".json,application/json" style={{display:"none"}} onChange={api.importFile} />
       </section>
+      <SyncCard state={state} api={api} syncing={syncing} />
       <section className="card">
         <h2>効果音</h2>
         <button className="btn ghost" onClick={api.toggleSound}>
@@ -1478,7 +1582,7 @@ function SettingsView({ state, api }){
 }
 
 /* ---------- AIにそうだん ---------- */
-function DigestModal({ text, onCopy, onShare, onClose }){
+function DigestModal({ text, autoText, onCopy, onShare, onClose }){
   return (
     <Sheet title="🤖 AIにそうだん" onClose={onClose}>
       <p className="note">下の文章をコピーして、ChatGPTに貼り付けてください。畑のようすを分かったうえで答えてくれます。</p>
@@ -1487,6 +1591,8 @@ function DigestModal({ text, onCopy, onShare, onClose }){
         <button className="btn" onClick={() => onCopy(text)}>📋 コピーする</button>
         <button className="btn ghost" onClick={() => onShare(text)}>📤 共有する</button>
       </div>
+      {autoText &&
+        <button className="btn gray" style={{marginTop:10}} onClick={() => onCopy(autoText)}>📅 予定表つき（自動化タスク用）をコピー</button>}
     </Sheet>
   );
 }
@@ -1497,13 +1603,14 @@ function DigestModal({ text, onCopy, onShare, onClose }){
 function App(){
   const now = useNow();
   const todayStr = HB.ymd(now);
-  const [state, setState] = useState(() => HB.migrateState(HB.load() || HB.defaultState()));
+  const [state, setState] = useState(() => HB.load() || HB.defaultState());
   const [tab, setTab] = useState("today");
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState("");
   const [quotaWarn, setQuotaWarn] = useState(false);
   const [weather, setWeather] = useState(null);
   const [weatherErr, setWeatherErr] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const firstRun = useRef(true);
   const toastT = useRef(null);
   const stateRef = useRef(state);
@@ -1536,6 +1643,15 @@ function App(){
       .catch(() => { if(!dead) setWeatherErr(true); });
     return () => { dead = true; };
   }, [todayStr]);
+  /* 天気が確定したら自動同期(多くても6時間に1回) */
+  useEffect(() => {
+    const sy = (stateRef.current.settings.sync) || {};
+    if(!(sy.auto && sy.url)) return;
+    if(weather === null && !weatherErr) return;
+    const last = sy.lastSync ? new Date(sy.lastSync).getTime() : 0;
+    if(Date.now() - last < 6 * 3600 * 1000) return;
+    syncNow(true);
+  }, [weather, weatherErr]);
 
   /* バックアップ */
   const markBackedUp = () => update(s => { s.settings.lastBackup = new Date().toISOString(); });
@@ -1638,6 +1754,8 @@ function App(){
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     update(s => { s.harvests.push({ id: id, cropId: c.id, cropName: c.name, date: date, qty: qty, unit: unit }); });
     HB.sound.play("harvest"); setModal(null); say("収穫を記録しました 🧺");
+    const sy = (stateRef.current.settings.sync) || {};
+    if(sy.auto && sy.url) setTimeout(() => syncNow(true), 1500);
   };
   const removeHarvest = id => update(s => { s.harvests = s.harvests.filter(h => h.id !== id); });
   const toggleSound = () => {
@@ -1645,6 +1763,39 @@ function App(){
     const wasOn = stateRef.current.settings.sound !== false;
     update(s => { s.settings.sound = !wasOn; });
     if(!wasOn){ HB.sound.on = true; HB.sound.play("pon"); }
+  };
+
+  /* Drive自動保存 */
+  const setSyncField = (k, v) => update(s => {
+    s.settings.sync = Object.assign({}, HB.syncDefaults(), s.settings.sync || {});
+    s.settings.sync[k] = v;
+  });
+  const syncNow = async silent => {
+    const sy = (stateRef.current.settings.sync) || {};
+    if(!sy.url){ if(!silent) say("先に「うら設定」でURLとあいことばの設定が必要です"); return; }
+    if(syncing) return;
+    setSyncing(true);
+    const built = HB.buildSyncPayload(stateRef.current, weather, todayStr);
+    try{
+      const res = await fetch(sy.url, { method: "POST", body: JSON.stringify(built.payload) });
+      const j = await res.json();
+      if(!(j && j.ok)) throw new Error((j && j.error) || "server");
+      update(s => {
+        s.settings.sync = Object.assign({}, s.settings.sync);
+        const x = s.settings.sync;
+        x.lastSync = new Date().toISOString(); x.lastError = null;
+        x.sentHarvestIds = (x.sentHarvestIds || []).concat(built.sentIds).slice(-1000);
+        if(built.dailyDate) x.lastDailyLogDate = built.dailyDate;
+      });
+      if(!silent) say("Driveに保存しました ☁️");
+    }catch(e){
+      update(s => {
+        s.settings.sync = Object.assign({}, s.settings.sync);
+        s.settings.sync.lastError = String((e && e.message) || e);
+      });
+      if(!silent) say("Drive保存に失敗しました。電波と設定を確認してください");
+    }
+    setSyncing(false);
   };
 
   /* AIそうだん(要約づくり) */
@@ -1671,8 +1822,13 @@ function App(){
     copyDigest(text);
   };
 
-  const needBackup = state.crops.length > 0 && (!state.settings.lastBackup ||
+  const sy = state.settings.sync || {};
+  const syncFresh = sy.url && sy.lastSync &&
+    (Date.now() - new Date(sy.lastSync).getTime()) / 86400000 < 30;
+  const needBackup = state.crops.length > 0 && !syncFresh && (!state.settings.lastBackup ||
     (Date.now() - new Date(state.settings.lastBackup).getTime()) / 86400000 >= 30);
+  const syncTrouble = sy.url && sy.auto && sy.lastError &&
+    (!sy.lastSync || (Date.now() - new Date(sy.lastSync).getTime()) / 86400000 >= 3);
 
   const api = {
     toggleTask, removeHarvest, say,
@@ -1683,7 +1839,8 @@ function App(){
     setCropPhoto, setCropPlanted, setCropMemo, removeCrop,
     setCropCount, setCropMaturity, addNote, removeNote,
     addCustom, removeCustom, closeCrop, reopenCrop,
-    shareBackup, downloadBackup, importFile, toggleSound
+    shareBackup, downloadBackup, importFile, toggleSound,
+    syncNow, setSyncField
   };
 
   return (
@@ -1694,6 +1851,8 @@ function App(){
           <div className="banner danger">⚠️ この画面はお試し表示のため、記録が保存されません。本番のページ（GitHub Pages）でお使いください。</div>}
         {quotaWarn &&
           <div className="banner danger">⚠️ 保存がいっぱいです。「せってい」からバックアップを送って、古い写真を減らしてください。</div>}
+        {syncTrouble &&
+          <div className="banner warn">☁️ Driveへの保存がしばらくできていません。ご家族に伝えてください。</div>}
         {HB.storageOK && needBackup && tab !== "set" &&
           <div className="banner warn">🍀 しばらくバックアップをしていません。
             <button className="btn small" onClick={() => setTab("set")}>送る</button></div>}
@@ -1701,7 +1860,7 @@ function App(){
         {tab === "cal"   && <CalendarView state={state} todayStr={todayStr} api={api} />}
         {tab === "crops" && <CropsView state={state} todayStr={todayStr} api={api} />}
         {tab === "rec"   && <RecordsView state={state} todayStr={todayStr} api={api} />}
-        {tab === "set"   && <SettingsView state={state} api={api} />}
+        {tab === "set"   && <SettingsView state={state} api={api} syncing={syncing} />}
         <div className="ver">畑日和 v{HB.VERSION}・記録はこのスマホの中に保存されます</div>
       </main>
       <nav className="tabs">
@@ -1719,7 +1878,7 @@ function App(){
       {modal && modal.t === "harvest" &&
         <HarvestModal state={state} cropId={modal.id} todayStr={todayStr} onSave={addHarvest} onClose={() => setModal(null)} />}
       {modal && modal.t === "digest" &&
-        <DigestModal text={digestText()} onCopy={copyDigest} onShare={shareDigest} onClose={() => setModal(null)} />}
+        <DigestModal text={digestText()} autoText={HB.buildAutomationText(state, todayStr, 90)} onCopy={copyDigest} onShare={shareDigest} onClose={() => setModal(null)} />}
       <Toast msg={toast} />
     </div>
   );
