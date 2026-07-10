@@ -204,7 +204,7 @@ label.f{display:block;font-size:14px;color:var(--muted);margin:12px 0 4px;}
 <script id="hb-core">
 "use strict";
 var HB = {};
-HB.VERSION = "2.4.0";
+HB.VERSION = "2.5.0";
 HB.KEY = "hatabiyori:v2";
 /* 天気の観測地点。引っ越したらここを変えるだけ。 */
 HB.LOC = { name: "因島", lat: 34.30, lon: 133.19 };
@@ -1000,6 +1000,42 @@ HB.compressImage = function(file, maxSide, quality){
 if(typeof module !== "undefined" && module.exports){ module.exports = HB; }
 </script>
 
+<script id="hb-cal">
+"use strict";
+/* ---------- カレンダー連携モジュール ----------
+   受付係v1.3の action:"calendar" が返す農業予定を、既存の予定エンジンに合流させる。
+   既存コードは書き換えず「包む」方式: HB.migrate と HB.tasksForDate をラップ。
+   予定の編集はGoogleカレンダー側で行う(次にアプリを開いた時に反映)。 */
+(function(){
+  var _migrate = HB.migrate;
+  HB.migrate = function(s){
+    s = _migrate(s);
+    if(!s) return s;
+    s.calCache = s.calCache || { at: null, events: [] };
+    if(s.settings && s.settings.sync && s.settings.sync.calendar === undefined){
+      s.settings.sync.calendar = true;
+    }
+    return s;
+  };
+  var _tasksForDate = HB.tasksForDate;
+  HB.tasksForDate = function(state, dateStr){
+    var list = _tasksForDate(state, dateStr);
+    var cc = state.calCache;
+    var on = !(state.settings && state.settings.sync && state.settings.sync.calendar === false);
+    if(on && cc && cc.events){
+      cc.events.forEach(function(ev){
+        if(ev.date !== dateStr) return;
+        var label = (ev.time ? ev.time + " " : "") + ev.title;
+        list.push({ cropId: "cal:" + ev.id, cropName: "\ud83d\udcc6 カレンダーの予定",
+                    label: label, kind: "cal",
+                    key: "cal:" + ev.id + "|" + dateStr + "|" + label });
+      });
+    }
+    return list;
+  };
+})();
+</script>
+
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
@@ -1576,6 +1612,10 @@ function SyncCard({ state, api, syncing }){
           <button className="btn ghost small" onClick={() => api.setSyncField("auto", !(sy.auto !== false))}>
             {sy.auto !== false ? "自動保存は オン" : "自動保存は オフ"}
           </button>
+          <label className="f">カレンダー連携（受付係v1.3が必要）</label>
+          <button className="btn ghost small" onClick={() => api.setSyncField("calendar", !(sy.calendar !== false))}>
+            {sy.calendar !== false ? "\ud83d\udcc6 カレンダーの農業予定を 表示中" : "\ud83d\udcc6 カレンダー連携は オフ"}
+          </button>
           <div style={{height:8}}></div>
           <button className="btn ghost small" disabled={!sy.url} onClick={async () => {
             const link = window.location.origin + window.location.pathname + "#setup=" + HB.encodeSetup({ url: sy.url, token: sy.token, mode: "send" });
@@ -1703,6 +1743,20 @@ function App(){
       .then(d => { if(!dead){ setWeather(d); setWeatherErr(false); } })
       .catch(() => { if(!dead) setWeatherErr(true); });
     return () => { dead = true; };
+  }, [todayStr]);
+  useEffect(() => {
+    const sy = (stateRef.current.settings.sync) || {};
+    if(!(sy.url && sy.calendar !== false)) return;
+    const cc = stateRef.current.calCache || {};
+    if(cc.at && Date.now() - new Date(cc.at).getTime() < 3 * 3600 * 1000) return;
+    fetch(sy.url, { method: "POST", body: JSON.stringify({ token: sy.token || "", action: "calendar", days: 180 }) })
+      .then(r => r.json())
+      .then(j => {
+        if(j && j.ok && Array.isArray(j.events)){
+          update(s => { s.calCache = { at: new Date().toISOString(), events: j.events.slice(0, 300) }; });
+        }
+      })
+      .catch(() => {});
   }, [todayStr]);
   /* 天気が確定したら自動同期(多くても6時間に1回) */
   useEffect(() => {
