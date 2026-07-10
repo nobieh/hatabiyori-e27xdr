@@ -204,7 +204,7 @@ label.f{display:block;font-size:14px;color:var(--muted);margin:12px 0 4px;}
 <script id="hb-core">
 "use strict";
 var HB = {};
-HB.VERSION = "2.3.0";
+HB.VERSION = "2.4.0";
 HB.KEY = "hatabiyori:v2";
 /* 天気の観測地点。引っ越したらここを変えるだけ。 */
 HB.LOC = { name: "因島", lat: 34.30, lon: 133.19 };
@@ -260,7 +260,7 @@ HB.storageOK = (function(){
   }catch(e){ return false; }
 })();
 HB.syncDefaults = function(){
-  return { url:"", token:"", auto:true, lastSync:null, lastError:null, sentHarvestIds:[], lastDailyLogDate:null };
+  return { url:"", token:"", auto:true, mode:"send", lastSync:null, lastError:null, sentHarvestIds:[], lastDailyLogDate:null };
 };
 /* 旧データに新しい項目を足す(何度呼んでも安全・こわさない)。
    Drive同期の設定(sync)と、株ごとの追加項目(株数・そだち・メモ・じぶん予定・今季おわり)の
@@ -895,6 +895,37 @@ HB.buildSyncPayload = function(state, weather, todayStr){
     dailyDate: dailyRow ? todayStr : null
   };
 };
+/* ---------- Driveからの受け取り(端末=窓、Drive=親玉) ---------- */
+HB.mergePulled = function(localState, pulledData){
+  var merged = HB.migrate(JSON.parse(JSON.stringify(pulledData)));
+  /* 写真はDriveに置かないので、同じidの作物はこの端末の写真を残す */
+  merged.crops = merged.crops.map(function(c){
+    var old = null;
+    for(var i = 0; i < localState.crops.length; i++){
+      if(localState.crops[i].id === c.id) old = localState.crops[i];
+    }
+    if(old && old.photo && !c.photo) c = Object.assign({}, c, { photo: old.photo });
+    return c;
+  });
+  /* この端末の接続設定(URL・あいことば・役わり)はこの端末のまま */
+  merged.settings.sync = Object.assign({}, localState.settings.sync);
+  return merged;
+};
+/* ---------- 設定リンク(#setup=…)の作成と読み取り ---------- */
+HB.encodeSetup = function(sync){
+  var o = { url: sync.url || "", token: sync.token || "", mode: sync.mode || "send" };
+  return encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(o)))));
+};
+HB.decodeSetup = function(hash){
+  try{
+    var m = /#setup=([^&]+)/.exec(hash || "");
+    if(!m) return null;
+    var o = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[1])))));
+    if(o && o.url) return { url: String(o.url), token: String(o.token || ""), mode: (o.mode === "receive" ? "receive" : "send") };
+  }catch(e){}
+  return null;
+};
+
 /* ---------- 自動化タスク用テキスト(予定表つき) ---------- */
 HB.buildAutomationText = function(state, todayStr, days){
   days = days || 90;
@@ -1519,9 +1550,15 @@ function SyncCard({ state, api, syncing }){
       <div className="kv"><span>ようす</span><b>{sy.lastError ? "⚠️ うまくいっていません" : status}</b></div>
       {sy.lastError && <p className="note">直近のエラー: {String(sy.lastError).slice(0, 80)}</p>}
       <div style={{height:8}}></div>
-      <button className="btn" onClick={() => api.syncNow(false)} disabled={!!syncing}>
-        {syncing ? "保存しています…" : "☁️ 今すぐDriveに保存"}
-      </button>
+      {(sy.mode || "send") === "send"
+        ? <button className="btn" onClick={() => api.syncNow(false)} disabled={!!syncing}>
+            {syncing ? "はたらいています…" : "☁️ 今すぐDriveに保存"}
+          </button>
+        : <button className="btn" onClick={() => {
+            if(window.confirm("この端末の表示を、Driveにある最新の記録に置きかえます。よろしいですか？")) api.pullNow(false);
+          }} disabled={!!syncing}>
+            {syncing ? "はたらいています…" : "⬇️ Driveから受け取る"}
+          </button>}
       <div style={{height:8}}></div>
       <button className="btn gray small" onClick={() => setOpen(!open)}>{open ? "うら設定をとじる" : "うら設定（ご家族用）"}</button>
       {open &&
@@ -1531,10 +1568,24 @@ function SyncCard({ state, api, syncing }){
             onChange={e => api.setSyncField("url", e.target.value.trim())} />
           <label className="f">あいことば（受付係の TOKEN と同じ文字列）</label>
           <input type="text" value={sy.token || ""} onChange={e => api.setSyncField("token", e.target.value.trim())} />
+          <label className="f">この端末の役わり</label>
+          <button className="btn ghost small" onClick={() => api.setSyncField("mode", (sy.mode || "send") === "send" ? "receive" : "send")}>
+            {(sy.mode || "send") === "send" ? "本番（記録をDriveへ送る）" : "見るだけ（Driveから受け取る）"}
+          </button>
           <label className="f">自動保存（開いた時と収穫記録のあと）</label>
           <button className="btn ghost small" onClick={() => api.setSyncField("auto", !(sy.auto !== false))}>
             {sy.auto !== false ? "自動保存は オン" : "自動保存は オフ"}
           </button>
+          <div style={{height:8}}></div>
+          <button className="btn ghost small" disabled={!sy.url} onClick={async () => {
+            const link = window.location.origin + window.location.pathname + "#setup=" + HB.encodeSetup({ url: sy.url, token: sy.token, mode: "send" });
+            try{ await navigator.clipboard.writeText(link); api.say("設定リンクをコピーしました。LINEで送って、その端末で開くだけです"); }
+            catch(e){ window.prompt("このリンクをコピーしてください", link); }
+          }}>🔗 設定リンクをコピー（別の端末に配る）</button>
+          <div style={{height:8}}></div>
+          <button className="btn ghost small" onClick={() => {
+            if(window.confirm("この端末の表示を、Driveにある最新の記録に置きかえます（写真はこの端末のものを残します）。よろしいですか？")) api.pullNow(false);
+          }}>⬇️ Driveから読み込む（復元・機種変のときに）</button>
         </div>}
     </section>
   );
@@ -1636,6 +1687,16 @@ function App(){
     document.addEventListener("visibilitychange", h);
     return () => { window.removeEventListener("pagehide", h); document.removeEventListener("visibilitychange", h); };
   }, []);
+  /* 設定リンク(#setup=…)で開かれたら、うら設定を自動で受け取る */
+  useEffect(() => {
+    const su = HB.decodeSetup(window.location.hash);
+    if(!su) return;
+    update(s => {
+      s.settings.sync = Object.assign({}, HB.syncDefaults(), s.settings.sync || {}, su);
+    });
+    try{ history.replaceState(null, "", window.location.pathname + window.location.search); }catch(e){}
+    say("設定を受け取りました 🔗");
+  }, []);
   useEffect(() => {
     let dead = false;
     HB.fetchWeather()
@@ -1649,6 +1710,11 @@ function App(){
     if(!(sy.auto && sy.url)) return;
     if(weather === null && !weatherErr) return;
     const last = sy.lastSync ? new Date(sy.lastSync).getTime() : 0;
+    if((sy.mode || "send") === "receive"){
+      if(Date.now() - last < 10 * 60 * 1000) return;
+      pullNow(true);
+      return;
+    }
     if(Date.now() - last < 6 * 3600 * 1000) return;
     syncNow(true);
   }, [weather, weatherErr]);
@@ -1755,7 +1821,7 @@ function App(){
     update(s => { s.harvests.push({ id: id, cropId: c.id, cropName: c.name, date: date, qty: qty, unit: unit }); });
     HB.sound.play("harvest"); setModal(null); say("収穫を記録しました 🧺");
     const sy = (stateRef.current.settings.sync) || {};
-    if(sy.auto && sy.url) setTimeout(() => syncNow(true), 1500);
+    if(sy.auto && sy.url && (sy.mode || "send") === "send") setTimeout(() => syncNow(true), 1500);
   };
   const removeHarvest = id => update(s => { s.harvests = s.harvests.filter(h => h.id !== id); });
   const toggleSound = () => {
@@ -1794,6 +1860,32 @@ function App(){
         s.settings.sync.lastError = String((e && e.message) || e);
       });
       if(!silent) say("Drive保存に失敗しました。電波と設定を確認してください");
+    }
+    setSyncing(false);
+  };
+  const pullNow = async silent => {
+    const sy = (stateRef.current.settings.sync) || {};
+    if(!sy.url){ if(!silent) say("先に「うら設定」でURLとあいことばの設定が必要です"); return; }
+    if(syncing) return;
+    setSyncing(true);
+    try{
+      const res = await fetch(sy.url, { method: "POST", body: JSON.stringify({ token: sy.token || "", action: "load" }) });
+      const j = await res.json();
+      if(!(j && j.ok && j.data)) throw new Error((j && j.error) || "nodata");
+      const merged = HB.mergePulled(stateRef.current, j.data);
+      setState(merged);
+      update(s => {
+        s.settings.sync = Object.assign({}, s.settings.sync);
+        s.settings.sync.lastSync = new Date().toISOString();
+        s.settings.sync.lastError = null;
+      });
+      if(!silent) say("Driveから読み込みました ⬇️");
+    }catch(e){
+      update(s => {
+        s.settings.sync = Object.assign({}, s.settings.sync);
+        s.settings.sync.lastError = String((e && e.message) || e);
+      });
+      if(!silent) say("読み込みに失敗しました。設定と電波を確認してください");
     }
     setSyncing(false);
   };
@@ -1840,7 +1932,7 @@ function App(){
     setCropCount, setCropMaturity, addNote, removeNote,
     addCustom, removeCustom, closeCrop, reopenCrop,
     shareBackup, downloadBackup, importFile, toggleSound,
-    syncNow, setSyncField
+    syncNow, pullNow, setSyncField
   };
 
   return (

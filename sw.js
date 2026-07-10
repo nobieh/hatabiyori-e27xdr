@@ -1,6 +1,6 @@
 /* 畑日和 v2 — オフライン用サービスワーカー
    方針: 本体(index.html)はネット優先(更新がすぐ届く)、部品はキャッシュ優先(速い)。 */
-var VERSION = "hatabiyori-v2.3.0";
+var VERSION = "hatabiyori-v2.4.0";
 var STATIC = [
   "./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png",
   "https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js",
