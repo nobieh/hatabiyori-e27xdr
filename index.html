@@ -39,9 +39,14 @@ button{font-family:inherit;}
 
 /* ---- 時刻でうつろう空（v1から受け継ぐ看板） ---- */
 .sky{
+  position:relative;
   color:#fff;padding:22px 18px 18px;border-radius:0 0 22px 22px;
   text-shadow:0 1px 3px rgba(20,30,20,.35);
   transition:background 1.2s ease;
+}
+.sky .sekki{
+  position:absolute;top:18px;right:14px;font-size:13px;font-weight:700;letter-spacing:.1em;
+  background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:3px 12px;
 }
 .sky[data-tod="morning"]{background:linear-gradient(160deg,#f7c873 0%,#e89a5f 35%,#8fb8d8 100%);}
 .sky[data-tod="day"]    {background:linear-gradient(160deg,#6fa8dc 0%,#8fc1e9 55%,#bcd9ee 100%);}
@@ -199,7 +204,7 @@ label.f{display:block;font-size:14px;color:var(--muted);margin:12px 0 4px;}
 <script id="hb-core">
 "use strict";
 var HB = {};
-HB.VERSION = "2.1.0";
+HB.VERSION = "2.2.0";
 HB.KEY = "hatabiyori:v2";
 /* 天気の観測地点。引っ越したらここを変えるだけ。 */
 HB.LOC = { name: "因島", lat: 34.30, lon: 133.19 };
@@ -230,6 +235,20 @@ HB.greeting = function(tod){
     evening:"こんばんは、今日もおつかれさまでした。",
     night:"こんばんは、明日の畑も楽しみですね。"
   }[tod];
+};
+
+/* ---------- 二十四節気(近似日付・v1から移植) ---------- */
+HB.SEKKI = [
+  [1,5,"小寒"],[1,20,"大寒"],[2,4,"立春"],[2,19,"雨水"],[3,5,"啓蟄"],[3,20,"春分"],
+  [4,4,"清明"],[4,20,"穀雨"],[5,5,"立夏"],[5,21,"小満"],[6,5,"芒種"],[6,21,"夏至"],
+  [7,7,"小暑"],[7,22,"大暑"],[8,7,"立秋"],[8,23,"処暑"],[9,7,"白露"],[9,23,"秋分"],
+  [10,8,"寒露"],[10,23,"霜降"],[11,7,"立冬"],[11,22,"小雪"],[12,7,"大雪"],[12,21,"冬至"]
+];
+HB.sekki = function(d){
+  var md = (d.getMonth()+1)*100 + d.getDate();
+  var cur = "冬至";
+  for(var i=0;i<HB.SEKKI.length;i++){ var s=HB.SEKKI[i]; if(md >= s[0]*100+s[1]) cur = s[2]; }
+  return cur;
 };
 
 /* ---------- 保存（localStorage） ---------- */
@@ -562,7 +581,7 @@ HB.DB = {
   soramame:  { name:"ソラマメ",     cat:"いも・豆", emoji:"🫛", basis:"種まき",   water:3, unit:"袋", harvest:{from:150,to:180}, events:[{d:90,label:"追肥(春先)"},{d:100,label:"整枝・支柱立て"}], tip:"アブラムシは早めに対処。" },
   endou:     { name:"エンドウ",     cat:"いも・豆", emoji:"🫛", basis:"種まき",   water:3, unit:"袋", harvest:{from:150,to:190}, events:[{d:90,label:"支柱・ネット張り"},{d:100,label:"追肥"}], tip:"秋まきは大きくしすぎず冬越しさせる。" },
   /* ───── 花・その他(v1: バラ7種) ───── */
-  rose_established: { name:"バラ(育成株・年間管理)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪",
+  rose_established: { name:"バラ(育成株・年間管理)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, waterMonths:[6,7,8,9], unit:"輪",
     harvest:null,
     events:[],
     annual:[
@@ -582,7 +601,7 @@ HB.DB = {
       { m:12, d:15, label:"つるバラの誘引・鉢の植え替え適期" }
     ],
     tip:"すでに育っている2年目以降のバラ。剪定・寒肥・防除など1年の手入れを毎年自動でくり返します。開花は「収穫を記録」で輪数をつけると年ごとに比べられる。" },
-  rose_repeat: { name:"バラ(四季咲き)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪",
+  rose_repeat: { name:"バラ(四季咲き)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, waterMonths:[3,4,5,6,7,8,9,10], unit:"輪",
     harvest:null,
     events:[
       { d:14,  label:"活着確認(植え付け後の水切れ注意)" },
@@ -598,7 +617,7 @@ HB.DB = {
       { d:150, label:"秋の開花目安" }
     ],
     tip:"春・秋と繰り返し咲く。花後のお礼肥と夏剪定がポイント。" },
-  rose_bush: { name:"バラ(木立ち)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪",
+  rose_bush: { name:"バラ(木立ち)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, waterMonths:[3,4,5,6,7,8,9,10], unit:"輪",
     harvest:null,
     events:[
       { d:14,  label:"活着確認・支柱立て" },
@@ -612,7 +631,7 @@ HB.DB = {
       { d:140, label:"秋の開花目安(四季咲き品種)" }
     ],
     tip:"HTやフロリバンダ。直立性が強く支柱が必要なことも。" },
-  rose_shrub: { name:"バラ(シュラブ)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪",
+  rose_shrub: { name:"バラ(シュラブ)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, waterMonths:[3,4,5,6,7,8,9,10], unit:"輪",
     harvest:null,
     events:[
       { d:14,  label:"活着確認" },
@@ -625,7 +644,7 @@ HB.DB = {
       { d:100, label:"花がら摘み・お礼肥" }
     ],
     tip:"半つる〜木立ちの中間。仕立て方で樹形が変わる。比較的丈夫。" },
-  rose_climbing: { name:"バラ(つるバラ)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪",
+  rose_climbing: { name:"バラ(つるバラ)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, waterMonths:[3,4,5,6,7,8,9,10], unit:"輪",
     harvest:null,
     events:[
       { d:7,   label:"誘引スタート・フェンスやネットに固定" },
@@ -640,7 +659,7 @@ HB.DB = {
       { d:130, label:"新シュートの誘引(来年の花芽を確保)" }
     ],
     tip:"フェンス・パーゴラへの誘引が鍵。冬の誘引で翌年の花数が決まる。" },
-  rose_mini: { name:"バラ(ミニバラ)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪",
+  rose_mini: { name:"バラ(ミニバラ)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, waterMonths:[3,4,5,6,7,8,9,10], unit:"輪",
     harvest:null,
     events:[
       { d:14,  label:"活着確認" },
@@ -653,7 +672,7 @@ HB.DB = {
       { d:110, label:"秋の開花目安(四季咲き品種)" }
     ],
     tip:"コンパクトで初心者向き。鉢植えにも最適。" },
-  rose_english: { name:"バラ(イングリッシュ)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, unit:"輪",
+  rose_english: { name:"バラ(イングリッシュ)", cat:"花・その他", emoji:"🌹", basis:"植え付け", water:2, waterMonths:[3,4,5,6,7,8,9,10], unit:"輪",
     harvest:null,
     events:[
       { d:14,  label:"活着確認" },
@@ -672,31 +691,85 @@ HB.CATS = ["実もの","葉もの","根もの","いも・豆","花・その他"]
 HB.DBKEYS = Object.keys(HB.DB);
 
 /* ---------- 予定づくり ---------- */
+/* そだち(熟期): 早生は予定が早めに、晩生は遅めに来る(v1の機能を移植) */
+HB.factorOf = function(c){
+  return c.maturity === "early" ? 0.85 : c.maturity === "late" ? 1.15 : 1;
+};
 HB.tasksForDate = function(state, dateStr){
   var list = [];
   var d = parseYmd(dateStr);
   state.crops.forEach(function(c){
+    if(c.closed) return; /* 今季おわりの株は予定を止める */
     var t = HB.DB[c.key]; if(!t) return;
+    var f = HB.factorOf(c);
     var age = daysBetween(c.planted, dateStr);
-    function push(label, kind){
-      list.push({ cropId:c.id, cropName:c.name, label:label, kind:kind, key:c.id+"|"+dateStr+"|"+label });
+    function push(label, kind, pre){
+      list.push({ cropId:c.id, cropName:c.name, label:label, kind:kind, key:c.id+"|"+dateStr+"|"+(pre||"")+label });
     }
     if(age >= 0){
-      var wEnd = t.harvest ? (t.harvest.to + 14) : 3650;
-      if(t.water && age > 0 && age % t.water === 0 && age <= wEnd) push("水やり","water");
-      (t.events||[]).forEach(function(e){ if(e.d === age) push(e.label,"event"); });
-      if(t.harvest && age === t.harvest.from) push(t.harvest.label || "収穫をはじめられます","harvest");
+      var hFrom = t.harvest ? Math.round(t.harvest.from * f) : null;
+      var hTo   = t.harvest ? Math.round(t.harvest.to   * f) : null;
+      var wEnd = t.harvest ? (hTo + 14) : 3650;
+      var wSeason = !t.waterMonths || t.waterMonths.indexOf(d.getMonth()+1) >= 0;
+      if(t.water && wSeason && age > 0 && age % t.water === 0 && age <= wEnd) push("水やり","water");
+      (t.events||[]).forEach(function(e){ if(Math.round(e.d * f) === age) push(e.label,"event"); });
+      if(t.harvest && age === hFrom) push(t.harvest.label || "収穫をはじめられます","harvest");
     }
     (t.annual||[]).forEach(function(e){
       if(d.getMonth()+1 === e.m && d.getDate() === e.d) push(e.label,"event");
+    });
+    (c.custom||[]).forEach(function(e){
+      if(e.date === dateStr) push(e.label,"custom","じぶん::");
     });
   });
   return list;
 };
 HB.isHarvestTime = function(crop, dateStr){
-  var t = HB.DB[crop.key]; if(!t || !t.harvest) return false;
+  var t = HB.DB[crop.key]; if(!t || !t.harvest || crop.closed) return false;
+  var f = HB.factorOf(crop);
   var age = daysBetween(crop.planted, dateStr);
-  return age >= t.harvest.from && age <= t.harvest.to;
+  return age >= Math.round(t.harvest.from * f) && age <= Math.round(t.harvest.to * f);
+};
+/* 開かなかった日の作業をひろう「やり残し」(水やりは除く・未完了だけ) */
+HB.overdueTasks = function(state, todayStr, days){
+  days = days || 14;
+  var out = [];
+  for(var i = days; i >= 1; i--){
+    var ds = addDays(todayStr, -i);
+    HB.tasksForDate(state, ds).forEach(function(t){
+      if(t.kind === "water") return;
+      if(state.done[t.key]) return;
+      out.push(Object.assign({ date: ds }, t));
+    });
+  }
+  return out;
+};
+/* 育ち具合で変わる絵文字(写真がないときのサムネ・v1の名物) */
+HB.stageEmoji = function(c, todayStr){
+  var t = HB.DB[c.key]; if(!t) return "🌱";
+  if(t.annual || c.closed) return t.emoji;
+  var age = daysBetween(c.planted, todayStr);
+  var goal = t.harvest ? Math.round(t.harvest.from * HB.factorOf(c)) : 60;
+  if(age < 0) return "🌰";
+  if(age < goal * 0.34) return "🌱";
+  if(age < goal * 0.75) return "🌿";
+  return t.emoji;
+};
+/* 旧データに新しい項目を足す(何度呼んでも安全・こわさない) */
+HB.migrateState = function(s){
+  if(!s) return s;
+  (s.crops||[]).forEach(function(c){
+    if(c.count == null) c.count = 1;
+    if(!c.maturity) c.maturity = "normal";
+    if(!c.notes) c.notes = [];
+    if(!c.custom) c.custom = [];
+    if(c.closed == null) c.closed = false;
+    if(c.memo && c.notes.length === 0){
+      c.notes.push({ id:"m-"+c.id, date: ymd(new Date()), text: c.memo });
+      c.memo = "";
+    }
+  });
+  return s;
 };
 HB.upcoming = function(state, fromDate, days, cropId){
   var out = [];
@@ -719,14 +792,20 @@ HB.buildDigest = function(state, todayStr, weatherLine){
   L.push("■ 場所: 広島県・因島(瀬戸内の島。温暖)");
   if(weatherLine) L.push("■ 今日の天気: " + weatherLine);
   L.push("");
-  L.push("■ 育てている作物(" + state.crops.length + "件):");
-  if(state.crops.length === 0) L.push("・(まだ登録なし)");
-  state.crops.forEach(function(c){
+  var act = state.crops.filter(function(c){ return !c.closed; });
+  L.push("■ 育てている作物(" + act.length + "件):");
+  if(act.length === 0) L.push("・(まだ登録なし)");
+  act.forEach(function(c){
     var t = HB.DB[c.key] || {};
     var age = daysBetween(c.planted, todayStr);
-    var s = "・" + c.name + " — " + jpDate(c.planted) + (t.basis||"植え付け") + "(" + age + "日目)";
+    var s = "・" + c.name +
+            ((c.count||1) > 1 ? "(" + c.count + "株)" : "") +
+            (c.maturity === "early" ? "(早生)" : c.maturity === "late" ? "(晩生)" : "") +
+            " — " + jpDate(c.planted) + (t.basis||"植え付け") + "(" + age + "日目)";
     if(HB.isHarvestTime(c, todayStr)) s += " / いま収穫どき";
-    if(c.memo) s += " / メモ: " + c.memo.replace(/\n/g, " ");
+    var ns = (c.notes||[]).slice(0,2).map(function(n){ return jpDateShort(n.date) + " " + n.text.replace(/\n/g," "); });
+    if(c.memo) ns.push(c.memo.replace(/\n/g, " "));
+    if(ns.length) s += " / メモ: " + ns.join(" / ");
     L.push(s);
   });
   L.push("");
@@ -736,6 +815,11 @@ HB.buildDigest = function(state, todayStr, weatherLine){
   tasks.forEach(function(t){
     L.push("・[" + (state.done[t.key] ? "済" : "未") + "] " + t.cropName + ": " + t.label);
   });
+  L.push("");
+  L.push("■ やり残しの作業(この2週間):");
+  var od = HB.overdueTasks(state, todayStr, 14);
+  if(od.length === 0) L.push("・(なし)");
+  od.forEach(function(t){ L.push("・" + jpDateShort(t.date) + " " + t.cropName + ": " + t.label); });
   L.push("");
   L.push("■ 今後7日の予定(水やり以外):");
   var up = HB.upcoming(state, todayStr, 7);
@@ -767,7 +851,7 @@ HB.parseImport = function(text){
     s.done = s.done || {}; s.harvests = s.harvests || [];
     s.settings = s.settings || { sound:true, lastBackup:null };
     s.meta = s.meta || {};
-    return { ok:true, state:s };
+    return { ok:true, state: HB.migrateState(s) };
   }
   /* 旧・畑日和(Claude版)などの別形式 → 中身は捨てずに預かる */
   return { ok:false, error:"legacy", raw:o };
@@ -838,6 +922,7 @@ function Sky({ now }){
   const tod = HB.timeOfDay(now.getHours());
   return (
     <header className="sky" data-tod={tod}>
+      <div className="sekki">{HB.sekki(now)}</div>
       <div className="date">
         {now.getFullYear()}年{now.getMonth()+1}月{now.getDate()}日（{"日月火水木金土"[now.getDay()]}）・{HB.LOC.name}
       </div>
@@ -887,11 +972,12 @@ function TaskRow({ t, done, onToggle }){
         {done ? "✓" : ""}
       </button>
       <div className="body">
-        <div className="crop">{t.cropName}</div>
+        <div className="crop">{t.dateLabel ? t.dateLabel + "・" : ""}{t.cropName}</div>
         <div className="label">{t.label}</div>
       </div>
       {t.kind === "harvest" && <span className="tag harvest">収穫</span>}
       {t.kind === "water" && <span className="tag">水</span>}
+      {t.kind === "custom" && <span className="tag">じぶん</span>}
     </div>
   );
 }
@@ -900,6 +986,7 @@ function TodayView({ state, todayStr, weather, weatherErr, api }){
   const tasks = HB.tasksForDate(state, todayStr);
   const doneCount = tasks.filter(t => state.done[t.key]).length;
   const harvestNow = state.crops.filter(c => HB.isHarvestTime(c, todayStr));
+  const overdue = HB.overdueTasks(state, todayStr, 14);
   return (
     <div>
       <WeatherCard weather={weather} error={weatherErr} />
@@ -912,6 +999,15 @@ function TodayView({ state, todayStr, weather, weatherErr, api }){
         {tasks.length > 0 && doneCount === tasks.length &&
           <div className="alldone">🎉 今日のお仕事、ぜんぶ完了です。おつかれさまでした！</div>}
       </section>
+      {overdue.length > 0 &&
+        <section className="card">
+          <h2>やり残しはありませんか<span className="n">この2週間</span></h2>
+          <p className="note" style={{margin:"0 0 4px"}}>もう済んでいたら○を押してください。まだなら今日やってしまいましょう。</p>
+          {overdue.map(t => (
+            <TaskRow key={t.key} t={Object.assign({}, t, { dateLabel: HB.jpDateShort(t.date) })}
+              done={false} onToggle={api.toggleTask} />
+          ))}
+        </section>}
       {harvestNow.length > 0 &&
         <section className="card">
           <h2>いま収穫どき 🧺</h2>
@@ -989,20 +1085,25 @@ function CalendarView({ state, todayStr, api }){
 
 /* ---------- はたけ(作物一覧) ---------- */
 function CropsView({ state, todayStr, api }){
+  const active = state.crops.filter(c => !c.closed);
+  const closed = state.crops.filter(c => c.closed);
+  const kabu = active.reduce((a, c) => a + (c.count || 1), 0);
   return (
     <div>
       <section className="card">
-        <h2>育てている作物<span className="n">{state.crops.length}件</span></h2>
-        {state.crops.length === 0 &&
+        <h2>育てている作物<span className="n">{active.length}件・{kabu}株</span></h2>
+        {active.length === 0 &&
           <div className="empty">まだ登録がありません。下のボタンから最初の作物を登録しましょう。🌱</div>}
-        {state.crops.map(c => {
+        {active.map(c => {
           const t = HB.DB[c.key] || {};
           const age = HB.daysBetween(c.planted, todayStr);
           return (
             <button key={c.id} className="crop-item" onClick={() => api.openCrop(c.id)}>
-              <span className="thumb">{c.photo ? <img src={c.photo} alt="" /> : (t.emoji || "🌱")}</span>
+              <span className="thumb">{c.photo ? <img src={c.photo} alt="" /> : HB.stageEmoji(c, todayStr)}</span>
               <span>
                 <span className="name">{c.name}</span>
+                {(c.count || 1) > 1 &&
+                  <span className="badge" style={{background:"#e2eeda", color:"var(--leaf-deep)"}}>×{c.count}株</span>}
                 {HB.isHarvestTime(c, todayStr) && <span className="badge">収穫どき</span>}
                 <div className="meta">{HB.jpDate(c.planted)} {t.basis || "植え付け"}・{age}日目</div>
               </span>
@@ -1011,6 +1112,24 @@ function CropsView({ state, todayStr, api }){
         })}
       </section>
       <button className="btn" onClick={api.openAddCrop}>＋ さくもつを登録する</button>
+      {closed.length > 0 &&
+        <section className="card" style={{marginTop:14}}>
+          <h2>今季おわりにした作物<span className="n">{closed.length}件</span></h2>
+          <p className="note" style={{margin:"0 0 4px"}}>予定は止まっています。押すと中を見られます（再開もできます）。</p>
+          {closed.map(c => {
+            const t = HB.DB[c.key] || {};
+            return (
+              <button key={c.id} className="crop-item" style={{opacity:.62}} onClick={() => api.openCrop(c.id)}>
+                <span className="thumb">{c.photo ? <img src={c.photo} alt="" /> : (t.emoji || "🌱")}</span>
+                <span>
+                  <span className="name">{c.name}</span>
+                  <span className="badge" style={{background:"#efe9da", color:"var(--muted)"}}>おわり</span>
+                  <div className="meta">{HB.jpDate(c.planted)} {t.basis || "植え付け"}</div>
+                </span>
+              </button>
+            );
+          })}
+        </section>}
     </div>
   );
 }
@@ -1027,10 +1146,38 @@ function Sheet({ title, onClose, children }){
   );
 }
 
+function CountStepper({ value, onChange }){
+  /* 株数の入力。狭い画面(折りたたみスマホ)でも1列に収まるよう固定幅+折り返し禁止 */
+  return (
+    <div style={{display:"flex", alignItems:"center", gap:8, flexWrap:"nowrap"}}>
+      <button className="btn gray small" style={{width:56, flex:"none"}}
+        onClick={() => onChange(Math.max(1, value - 1))}>−</button>
+      <input type="number" inputMode="numeric" min="1" value={value}
+        style={{width:88, flex:"none", textAlign:"center"}}
+        onChange={e => { const v = parseInt(e.target.value, 10); onChange(Number.isFinite(v) && v > 0 ? v : 1); }} />
+      <button className="btn gray small" style={{width:56, flex:"none"}}
+        onClick={() => onChange(value + 1)}>＋</button>
+      <span style={{fontSize:15, fontWeight:700, color:"var(--muted)", flex:"none"}}>株</span>
+    </div>
+  );
+}
+
+function MaturitySelect({ value, onChange }){
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)}>
+      <option value="early">早生（はやく育つ品種）</option>
+      <option value="normal">ふつう</option>
+      <option value="late">晩生（ゆっくり育つ品種）</option>
+    </select>
+  );
+}
+
 function AddCropModal({ todayStr, onSave, onClose }){
   const [key, setKey] = useState("tomato");
   const [name, setName] = useState(HB.DB.tomato.name);
   const [date, setDate] = useState(todayStr);
+  const [count, setCount] = useState(1);
+  const [mat, setMat] = useState("normal");
   const t = HB.DB[key];
   const pick = k => { setKey(k); setName(HB.DB[k].name); };
   return (
@@ -1049,9 +1196,16 @@ function AddCropModal({ todayStr, onSave, onClose }){
       <input type="text" value={name} onChange={e => setName(e.target.value)} />
       <label className="f">{t.basis}をした日</label>
       <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+      <label className="f">株数（苗やタネの本数。まとめて1件で管理できます）</label>
+      <CountStepper value={count} onChange={setCount} />
+      {!t.annual &&
+        <div>
+          <label className="f">そだちの早さ（苗の袋に「早生」「晩生」とあれば合わせてください）</label>
+          <MaturitySelect value={mat} onChange={setMat} />
+        </div>}
       {t.tip && <p className="note">💡 {t.tip}</p>}
       <div style={{height:12}}></div>
-      <button className="btn" onClick={() => { if(!date) return; onSave(key, name.trim() || t.name, date); }}>
+      <button className="btn" onClick={() => { if(!date) return; onSave(key, name.trim() || t.name, date, count, mat); }}>
         登録する
       </button>
     </Sheet>
@@ -1061,27 +1215,35 @@ function AddCropModal({ todayStr, onSave, onClose }){
 function CropDetailModal({ state, cropId, todayStr, api, onClose }){
   const c = state.crops.find(x => x.id === cropId);
   const fileRef = useRef(null);
+  const [newNote, setNewNote] = useState("");
+  const [cuDate, setCuDate] = useState(todayStr);
+  const [cuLabel, setCuLabel] = useState("");
   if(!c) return null;
   const t = HB.DB[c.key] || {};
+  const f = HB.factorOf(c);
   const age = HB.daysBetween(c.planted, todayStr);
   const up = HB.upcoming(state, todayStr, 60, c.id);
   const myHarvests = state.harvests.filter(h => h.cropId === c.id);
   const total = {};
   myHarvests.forEach(h => { total[h.unit] = (total[h.unit] || 0) + Number(h.qty || 0); });
+  const customs = (c.custom || []).slice().sort((a, b) => a.date < b.date ? -1 : 1);
   const onPhoto = async e => {
-    const f = e.target.files && e.target.files[0];
-    if(!f) return;
+    const f2 = e.target.files && e.target.files[0];
+    if(!f2) return;
     try{
-      const dataUrl = await HB.compressImage(f, 640, 0.6);
+      const dataUrl = await HB.compressImage(f2, 640, 0.6);
       api.setCropPhoto(c.id, dataUrl);
     }catch(err){ api.say("写真を読み込めませんでした"); }
     e.target.value = "";
   };
   return (
     <Sheet title={(t.emoji || "🌱") + " " + c.name} onClose={onClose}>
+      {c.closed &&
+        <div className="banner warn" style={{marginTop:4}}>🍂 今季おわりにしています（予定は止まっています）。
+          <button className="btn small" onClick={() => api.reopenCrop(c.id)}>再開</button></div>}
       {c.photo
         ? <img className="bigphoto" src={c.photo} alt={c.name} />
-        : <div className="thumb" style={{width:"100%", height:140, fontSize:64}}>{t.emoji || "🌱"}</div>}
+        : <div className="thumb" style={{width:"100%", height:140, fontSize:64}}>{HB.stageEmoji(c, todayStr)}</div>}
       <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={onPhoto} />
       <div className="btnrow" style={{marginTop:10}}>
         <button className="btn ghost" onClick={() => fileRef.current && fileRef.current.click()}>📷 写真をとる</button>
@@ -1091,9 +1253,18 @@ function CropDetailModal({ state, cropId, todayStr, api, onClose }){
       <label className="f">{t.basis || "植え付け"}をした日（あとから直せます）</label>
       <input type="date" value={c.planted} onChange={e => e.target.value && api.setCropPlanted(c.id, e.target.value)} />
 
+      <label className="f">株数（苗やタネの本数）</label>
+      <CountStepper value={c.count || 1} onChange={n => api.setCropCount(c.id, n)} />
+
+      {!t.annual &&
+        <div>
+          <label className="f">そだちの早さ（変えると予定の日どりも動きます）</label>
+          <MaturitySelect value={c.maturity || "normal"} onChange={m => api.setCropMaturity(c.id, m)} />
+        </div>}
+
       <div style={{marginTop:12}}>
         <div className="kv"><span>きょうで</span><b>{age}日目 {HB.isHarvestTime(c, todayStr) && <span className="badge">収穫どき</span>}</b></div>
-        {t.harvest && <div className="kv"><span>収穫のめやす</span><b>{t.harvest.from}〜{t.harvest.to}日目ごろ</b></div>}
+        {t.harvest && <div className="kv"><span>収穫のめやす</span><b>{Math.round(t.harvest.from * f)}〜{Math.round(t.harvest.to * f)}日目ごろ</b></div>}
         {Object.keys(total).length > 0 &&
           <div className="kv"><span>これまでの収穫</span>
             <b>{Object.keys(total).map(u => total[u] + u).join("・")}</b></div>}
@@ -1106,11 +1277,53 @@ function CropDetailModal({ state, cropId, todayStr, api, onClose }){
         {up.map((u, i) => <div key={i}>{HB.jpDateShort(u.date)}　{u.label}</div>)}
       </div>
 
-      <label className="f">かんさつメモ</label>
-      <textarea value={c.memo || ""} placeholder="気づいたことを何でも。AIそうだんにも渡ります。"
-        onChange={e => api.setCropMemo(c.id, e.target.value)} />
+      <h3 style={{marginTop:16}}>じぶんの予定を足す</h3>
+      <p className="note" style={{margin:"0 0 4px"}}>「ネット張り」「草取り」など、自分で決めた作業を予定に入れられます。</p>
+      <label className="f">いつ</label>
+      <input type="date" value={cuDate} onChange={e => setCuDate(e.target.value)} />
+      <label className="f">なにを</label>
+      <input type="text" value={cuLabel} placeholder="例: 防鳥ネットを張る" onChange={e => setCuLabel(e.target.value)} />
+      <div style={{height:8}}></div>
+      <button className="btn ghost" onClick={() => {
+        if(!cuDate || !cuLabel.trim()) return;
+        api.addCustom(c.id, cuDate, cuLabel.trim()); setCuLabel("");
+      }}>📌 予定に入れる</button>
+      {customs.length > 0 &&
+        <div className="evlist" style={{marginTop:8}}>
+          {customs.map(u => (
+            <div key={u.id} style={{display:"flex", alignItems:"center", gap:8}}>
+              <span style={{flex:1}}>{HB.jpDateShort(u.date)}　{u.label}</span>
+              <button className="btn gray small" onClick={() => api.removeCustom(c.id, u.id)}>消す</button>
+            </div>
+          ))}
+        </div>}
+
+      <h3 style={{marginTop:16}}>かんさつメモ（日づけつき）</h3>
+      <textarea value={newNote} placeholder="気づいたことを何でも。AIそうだんにも渡ります。"
+        style={{minHeight:72}} onChange={e => setNewNote(e.target.value)} />
+      <div style={{height:8}}></div>
+      <button className="btn ghost" onClick={() => {
+        if(!newNote.trim()) return;
+        api.addNote(c.id, newNote); setNewNote("");
+      }}>📝 きょうのメモに残す</button>
+      {(c.notes || []).length > 0 &&
+        <div className="evlist" style={{marginTop:8}}>
+          {c.notes.map(n => (
+            <div key={n.id} style={{display:"flex", alignItems:"center", gap:8}}>
+              <span style={{flex:1}}><b>{HB.jpDateShort(n.date)}</b>　{n.text}</span>
+              <button className="btn gray small" onClick={() => {
+                if(window.confirm("このメモを消しますか？")) api.removeNote(c.id, n.id);
+              }}>消す</button>
+            </div>
+          ))}
+        </div>}
 
       <div style={{height:14}}></div>
+      {!c.closed &&
+        <button className="btn gray" onClick={() => {
+          if(window.confirm(c.name + " の予定を止めます（収穫やメモの記録は残ります）。来季また使うときは「再開」できます。よろしいですか？")) api.closeCrop(c.id);
+        }}>🍂 今季おわりにする（予定を止める）</button>}
+      <div style={{height:8}}></div>
       <button className="btn danger" onClick={() => {
         if(window.confirm(c.name + " を一覧から消します。収穫の記録は「きろく」に残ります。よろしいですか？")) api.removeCrop(c.id);
       }}>この作物を消す</button>
@@ -1234,10 +1447,10 @@ function SettingsView({ state, api }){
     <div>
       <section className="card">
         <h2>バックアップ（だいじ）</h2>
-        <p className="note">記録はこのスマホの中だけに保存されています。月に一度「送る」で家族に届けておくと、スマホが変わっても記録が守れます。</p>
+        <p className="note">記録はこのスマホの中だけに保存されています。月に一度「送る」を押して、LINEで家族に送るか、Googleドライブに保存しておくと、スマホが変わっても記録が守れます。</p>
         <div className="kv"><span>最後のバックアップ</span><b>{lbText}</b></div>
         <div className="stack" style={{marginTop:10}}>
-          <button className="btn" onClick={api.shareBackup}>📤 記録を送る（LINEなど）</button>
+          <button className="btn" onClick={api.shareBackup}>📤 記録を送る（LINE・Googleドライブ）</button>
           <button className="btn ghost" onClick={api.downloadBackup}>💾 ファイルに保存する</button>
           <button className="btn gray" onClick={() => fileRef.current && fileRef.current.click()}>📥 バックアップから戻す</button>
         </div>
@@ -1284,7 +1497,7 @@ function DigestModal({ text, onCopy, onShare, onClose }){
 function App(){
   const now = useNow();
   const todayStr = HB.ymd(now);
-  const [state, setState] = useState(() => HB.load() || HB.defaultState());
+  const [state, setState] = useState(() => HB.migrateState(HB.load() || HB.defaultState()));
   const [tab, setTab] = useState("today");
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState("");
@@ -1383,9 +1596,13 @@ function App(){
       else s.done[t.key] = { at: new Date().toISOString() };
     });
   };
-  const addCrop = (key, name, planted) => {
+  const addCrop = (key, name, planted, count, maturity) => {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    update(s => { s.crops.push({ id: id, key: key, name: name, planted: planted, photo: null, memo: "" }); });
+    update(s => { s.crops.push({
+      id: id, key: key, name: name, planted: planted, photo: null, memo: "",
+      count: Math.max(1, parseInt(count, 10) || 1), maturity: maturity || "normal",
+      notes: [], custom: [], closed: false
+    }); });
     HB.sound.play("pon"); setModal(null); say(name + " を登録しました 🌱");
   };
   const patchCrop = (id, patch) => update(s => {
@@ -1394,6 +1611,28 @@ function App(){
   const setCropPhoto = (id, p) => { patchCrop(id, { photo: p }); say("写真を保存しました 📷"); };
   const setCropPlanted = (id, d) => patchCrop(id, { planted: d });
   const setCropMemo = (id, m) => patchCrop(id, { memo: m });
+  const setCropCount = (id, n) => patchCrop(id, { count: Math.max(1, parseInt(n, 10) || 1) });
+  const setCropMaturity = (id, m) => patchCrop(id, { maturity: m });
+  const addNote = (id, text) => {
+    update(s => { s.crops = s.crops.map(c => c.id === id
+      ? Object.assign({}, c, { notes: [{ id: Date.now().toString(36), date: todayStr, text: String(text).trim() }].concat(c.notes || []) })
+      : c); });
+    say("メモを書きとめました 📝");
+  };
+  const removeNote = (id, nid) => update(s => {
+    s.crops = s.crops.map(c => c.id === id ? Object.assign({}, c, { notes: (c.notes || []).filter(n => n.id !== nid) }) : c);
+  });
+  const addCustom = (id, date, label) => {
+    update(s => { s.crops = s.crops.map(c => c.id === id
+      ? Object.assign({}, c, { custom: (c.custom || []).concat([{ id: Date.now().toString(36), date: date, label: label }]) })
+      : c); });
+    HB.sound.play("pon"); say("予定に入れました 📌");
+  };
+  const removeCustom = (id, cid) => update(s => {
+    s.crops = s.crops.map(c => c.id === id ? Object.assign({}, c, { custom: (c.custom || []).filter(x => x.id !== cid) }) : c);
+  });
+  const closeCrop = id => { patchCrop(id, { closed: true }); setModal(null); say("今季おわりにしました 🍂 記録は残っています"); };
+  const reopenCrop = id => { patchCrop(id, { closed: false }); say("予定を再開しました 🌱"); };
   const removeCrop = id => { update(s => { s.crops = s.crops.filter(c => c.id !== id); }); setModal(null); say("一覧から消しました"); };
   const addHarvest = (c, date, qty, unit) => {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -1442,6 +1681,8 @@ function App(){
     openAddCrop: () => setModal({ t: "add" }),
     openDigest: () => setModal({ t: "digest" }),
     setCropPhoto, setCropPlanted, setCropMemo, removeCrop,
+    setCropCount, setCropMaturity, addNote, removeNote,
+    addCustom, removeCustom, closeCrop, reopenCrop,
     shareBackup, downloadBackup, importFile, toggleSound
   };
 
